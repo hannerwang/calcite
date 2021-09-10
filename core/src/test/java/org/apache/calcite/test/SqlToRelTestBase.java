@@ -47,6 +47,7 @@ import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.schema.ColumnStrategy;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperatorTable;
@@ -73,6 +74,7 @@ import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.TestUtil;
 
+import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 
@@ -80,6 +82,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -99,6 +102,8 @@ public abstract class SqlToRelTestBase {
   //~ Static fields/initializers ---------------------------------------------
 
   protected static final String NL = System.getProperty("line.separator");
+  protected static final Supplier<RelDataTypeFactory> DEFAULT_TYPE_FACTORY_SUPPLIER =
+      Suppliers.memoize(() -> new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT));
 
   //~ Instance fields --------------------------------------------------------
 
@@ -110,7 +115,7 @@ public abstract class SqlToRelTestBase {
     final TesterImpl tester =
         new TesterImpl(getDiffRepos(), false, false, false, true, null, null,
             MockRelOptPlanner::new, UnaryOperator.identity(),
-            SqlConformanceEnum.DEFAULT, UnaryOperator.identity());
+            SqlConformanceEnum.DEFAULT, UnaryOperator.identity(), DEFAULT_TYPE_FACTORY_SUPPLIER);
     return tester.withConfig(c ->
         c.withTrimUnusedFields(true)
             .withExpand(true)
@@ -169,6 +174,13 @@ public abstract class SqlToRelTestBase {
      */
     RelRoot convertSqlToRel(String sql);
 
+    /**
+     * Converts an expression string to  {@link RexNode}.
+     *
+     * @param expr The expression
+     */
+    RexNode convertExprToRex(String expr);
+
     SqlNode parseQuery(String sql) throws Exception;
 
     /**
@@ -221,6 +233,21 @@ public abstract class SqlToRelTestBase {
         boolean trim);
 
     /**
+     * Checks that a SQL statement converts to a given plan, optionally
+     * trimming columns that are not needed.
+     *
+     * @param sql  SQL query or expression
+     * @param plan Expected plan
+     * @param trim Whether to trim columns that are not needed
+     * @param query True if {@code sql} is a query, false if it is an expression
+     */
+    void assertConvertsTo(
+        String sql,
+        String plan,
+        boolean trim,
+        boolean query);
+
+    /**
      * Returns the diff repository.
      *
      * @return Diff repository
@@ -264,8 +291,17 @@ public abstract class SqlToRelTestBase {
     /** Returns a tester that uses a given context. */
     Tester withContext(UnaryOperator<Context> transform);
 
+    /** Returns a tester that uses a type factory. */
+    Tester withTypeFactorySupplier(Supplier<RelDataTypeFactory> typeFactorySupplier);
+
     /** Trims a RelNode. */
     RelNode trimRelNode(RelNode relNode);
+
+    SqlNode parseExpression(String expr) throws Exception;
+
+    /** Returns a tester that applies the given transform to a validator before
+     * using it. */
+    Tester withValidatorTransform(UnaryOperator<SqlValidator> transform);
   }
 
   //~ Inner Classes ----------------------------------------------------------
@@ -539,15 +575,16 @@ public abstract class SqlToRelTestBase {
     private final SqlConformance conformance;
     private final SqlTestFactory.MockCatalogReaderFactory catalogReaderFactory;
     private final Function<RelOptCluster, RelOptCluster> clusterFactory;
-    private RelDataTypeFactory typeFactory;
+    private final Supplier<RelDataTypeFactory> typeFactorySupplier;
     private final UnaryOperator<SqlToRelConverter.Config> configTransform;
     private final UnaryOperator<Context> contextTransform;
+    private final UnaryOperator<SqlValidator> validatorTransform;
 
     /** Creates a TesterImpl with default options. */
     protected TesterImpl(DiffRepository diffRepos) {
       this(diffRepos, true, true, false, true, null, null,
           MockRelOptPlanner::new, UnaryOperator.identity(),
-          SqlConformanceEnum.DEFAULT, c -> Contexts.empty());
+          SqlConformanceEnum.DEFAULT, c -> Contexts.empty(), DEFAULT_TYPE_FACTORY_SUPPLIER);
     }
 
     /**
@@ -566,7 +603,24 @@ public abstract class SqlToRelTestBase {
         Function<RelOptCluster, RelOptCluster> clusterFactory,
         Function<Context, RelOptPlanner> plannerFactory,
         UnaryOperator<SqlToRelConverter.Config> configTransform,
-        SqlConformance conformance, UnaryOperator<Context> contextTransform) {
+        SqlConformance conformance, UnaryOperator<Context> contextTransform,
+        Supplier<RelDataTypeFactory> typeFactorySupplier) {
+      this(diffRepos, enableDecorrelate, enableTrim, enableLateDecorrelate,
+          enableTypeCoercion, catalogReaderFactory, clusterFactory, plannerFactory,
+          configTransform, conformance, contextTransform,  typeFactorySupplier,
+          transform -> transform);
+    }
+
+    protected TesterImpl(DiffRepository diffRepos, boolean enableDecorrelate,
+        boolean enableTrim, boolean enableLateDecorrelate,
+        boolean enableTypeCoercion,
+        SqlTestFactory.MockCatalogReaderFactory catalogReaderFactory,
+        Function<RelOptCluster, RelOptCluster> clusterFactory,
+        Function<Context, RelOptPlanner> plannerFactory,
+        UnaryOperator<SqlToRelConverter.Config> configTransform,
+        SqlConformance conformance, UnaryOperator<Context> contextTransform,
+        Supplier<RelDataTypeFactory> typeFactorySupplier,
+        UnaryOperator<SqlValidator> validatorTransform) {
       this.diffRepos = diffRepos;
       this.enableDecorrelate = enableDecorrelate;
       this.enableTrim = enableTrim;
@@ -578,6 +632,8 @@ public abstract class SqlToRelTestBase {
       this.plannerFactory = Objects.requireNonNull(plannerFactory, "plannerFactory");
       this.conformance = Objects.requireNonNull(conformance, "conformance");
       this.contextTransform = Objects.requireNonNull(contextTransform, "contextTransform");
+      this.typeFactorySupplier = Objects.requireNonNull(typeFactorySupplier, "typeFactorySupplier");
+      this.validatorTransform = Objects.requireNonNull(validatorTransform, "validatorTransform");
     }
 
     public RelRoot convertSqlToRel(String sql) {
@@ -594,24 +650,9 @@ public abstract class SqlToRelTestBase {
       final Prepare.CatalogReader catalogReader =
           createCatalogReader(typeFactory);
       final SqlValidator validator =
-          createValidator(
-              catalogReader, typeFactory);
-      final Context context = getContext();
-      context.maybeUnwrap(CalciteConnectionConfig.class)
-          .ifPresent(calciteConfig -> {
-            validator.transform(config ->
-                config.withDefaultNullCollation(
-                    calciteConfig.defaultNullCollation()));
-          });
-      final SqlToRelConverter.Config config =
-          configTransform.apply(SqlToRelConverter.config());
-
-      final SqlToRelConverter converter =
-          createSqlToRelConverter(
-              validator,
-              catalogReader,
-              typeFactory,
-              config);
+          createValidator(catalogReader, typeFactory);
+      SqlToRelConverter converter =
+          createSqlToRelConverter(validator, catalogReader);
 
       final SqlNode validatedQuery = validator.validate(sqlQuery);
       RelRoot root =
@@ -634,27 +675,31 @@ public abstract class SqlToRelTestBase {
       final Prepare.CatalogReader catalogReader =
           createCatalogReader(typeFactory);
       final SqlValidator validator =
-          createValidator(
-              catalogReader, typeFactory);
-      final Context context = getContext();
-      final CalciteConnectionConfig calciteConfig =
-          context.unwrap(CalciteConnectionConfig.class);
-      if (calciteConfig != null) {
-        validator.transform(config ->
-            config.withDefaultNullCollation(calciteConfig.defaultNullCollation()));
-      }
-      final SqlToRelConverter.Config config =
-          configTransform.apply(SqlToRelConverter.config());
+          createValidator(catalogReader, typeFactory);
 
       final SqlToRelConverter converter =
-          createSqlToRelConverter(
-              validator,
-              catalogReader,
-              typeFactory,
-              config);
+          createSqlToRelConverter(validator, catalogReader);
       relNode = converter.flattenTypes(relNode, true);
       relNode = converter.trimUnusedFields(true, relNode);
       return relNode;
+    }
+
+    private SqlToRelConverter createSqlToRelConverter(SqlValidator validator,
+                                                      Prepare.CatalogReader catalogReader) {
+      final Context context = getContext();
+      context.maybeUnwrap(CalciteConnectionConfig.class)
+          .ifPresent(calciteConfig -> {
+            validator.transform(config ->
+                config.withDefaultNullCollation(calciteConfig.defaultNullCollation()));
+          });
+      final SqlToRelConverter.Config config =
+          configTransform.apply(SqlToRelConverter.config());
+
+      return createSqlToRelConverter(
+          validator,
+          catalogReader,
+          getTypeFactory(),
+          config);
     }
 
     protected SqlToRelConverter createSqlToRelConverter(
@@ -675,14 +720,7 @@ public abstract class SqlToRelTestBase {
     }
 
     protected final RelDataTypeFactory getTypeFactory() {
-      if (typeFactory == null) {
-        typeFactory = createTypeFactory();
-      }
-      return typeFactory;
-    }
-
-    protected RelDataTypeFactory createTypeFactory() {
-      return new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
+      return typeFactorySupplier.get();
     }
 
     protected final RelOptPlanner getPlanner() {
@@ -699,6 +737,13 @@ public abstract class SqlToRelTestBase {
       return parser.parseQuery();
     }
 
+    @Override public SqlNode parseExpression(String expr) throws Exception {
+      final SqlParser.Config config =
+              SqlParser.config().withConformance(getConformance());
+      SqlParser parser = SqlParser.create(expr, config);
+      return parser.parseExpression();
+    }
+
     public SqlConformance getConformance() {
       return conformance;
     }
@@ -713,7 +758,7 @@ public abstract class SqlToRelTestBase {
       if (conformance.allowGeometry()) {
         list.add(SqlOperatorTables.spatialInstance());
       }
-      return new FarragoTestValidator(
+      SqlValidator validator = new FarragoTestValidator(
           SqlOperatorTables.chain(list),
           catalogReader,
           typeFactory,
@@ -721,6 +766,7 @@ public abstract class SqlToRelTestBase {
               .withSqlConformance(conformance)
               .withTypeCoercionEnabled(enableTypeCoercion)
               .withIdentifierExpansion(true));
+      return validatorTransform.apply(validator);
     }
 
     public final SqlOperatorTable getOperatorTable() {
@@ -774,6 +820,38 @@ public abstract class SqlToRelTestBase {
         String sql,
         String plan,
         boolean trim) {
+      assertConvertsTo(sql, plan, false, true);
+    }
+
+    public void assertConvertsTo(
+        String sql,
+        String plan,
+        boolean trim,
+        boolean query) {
+      if (query) {
+        assertSqlConvertsTo(sql, plan, trim);
+      } else {
+        assertExprConvertsTo(sql, plan);
+      }
+    }
+
+    private void assertExprConvertsTo(
+        String expr,
+        String plan) {
+      String expr2 = getDiffRepos().expand("sql", expr);
+      RexNode rex = convertExprToRex(expr2);
+      assertNotNull(rex);
+      // NOTE jvs 28-Mar-2006:  insert leading newline so
+      // that plans come out nicely stacked instead of first
+      // line immediately after CDATA start
+      String actual = NL + rex.toString() + NL;
+      diffRepos.assertEquals("plan", plan, actual);
+    }
+
+    private void assertSqlConvertsTo(
+        String sql,
+        String plan,
+        boolean trim) {
       String sql2 = getDiffRepos().expand("sql", sql);
       RelNode rel = convertSqlToRel(sql2).project();
 
@@ -794,6 +872,29 @@ public abstract class SqlToRelTestBase {
       // line immediately after CDATA start
       String actual = NL + RelOptUtil.toString(rel);
       diffRepos.assertEquals("plan", plan, actual);
+    }
+
+    public RexNode convertExprToRex(String expr) {
+      Objects.requireNonNull(expr, "expr");
+      final SqlNode sqlQuery;
+      try {
+        sqlQuery = parseExpression(expr);
+      } catch (RuntimeException | Error e) {
+        throw e;
+      } catch (Exception e) {
+        throw TestUtil.rethrow(e);
+      }
+
+      final RelDataTypeFactory typeFactory = getTypeFactory();
+      final Prepare.CatalogReader catalogReader =
+              createCatalogReader(typeFactory);
+      final SqlValidator validator =
+              createValidator(
+                      catalogReader, typeFactory);
+      SqlToRelConverter converter = createSqlToRelConverter(validator, catalogReader);
+
+      final SqlNode validatedQuery = validator.validate(sqlQuery);
+      return converter.convertExpression(validatedQuery);
     }
 
     /**
@@ -823,7 +924,7 @@ public abstract class SqlToRelTestBase {
           : new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
               enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
               clusterFactory, plannerFactory, configTransform, conformance,
-              contextTransform);
+              contextTransform, typeFactorySupplier);
     }
 
     public TesterImpl withLateDecorrelation(boolean enableLateDecorrelate) {
@@ -832,7 +933,7 @@ public abstract class SqlToRelTestBase {
           : new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
               enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
               clusterFactory, plannerFactory, configTransform, conformance,
-              contextTransform);
+              contextTransform, typeFactorySupplier);
     }
 
     public Tester withConfig(UnaryOperator<SqlToRelConverter.Config> transform) {
@@ -841,7 +942,7 @@ public abstract class SqlToRelTestBase {
       return new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
           enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
           clusterFactory, plannerFactory, configTransform, conformance,
-          contextTransform);
+          contextTransform, typeFactorySupplier);
     }
 
     public TesterImpl withTrim(boolean enableTrim) {
@@ -850,21 +951,21 @@ public abstract class SqlToRelTestBase {
           : new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
               enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
               clusterFactory, plannerFactory, configTransform, conformance,
-              contextTransform);
+              contextTransform, typeFactorySupplier);
     }
 
     public TesterImpl withConformance(SqlConformance conformance) {
       return new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
           enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
           clusterFactory, plannerFactory, configTransform, conformance,
-          contextTransform);
+          contextTransform, typeFactorySupplier);
     }
 
     public Tester enableTypeCoercion(boolean enableTypeCoercion) {
       return new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
           enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
           clusterFactory, plannerFactory, configTransform, conformance,
-          contextTransform);
+          contextTransform, typeFactorySupplier);
     }
 
     public Tester withCatalogReaderFactory(
@@ -872,7 +973,7 @@ public abstract class SqlToRelTestBase {
       return new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
           enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
           clusterFactory, plannerFactory, configTransform, conformance,
-          contextTransform);
+          contextTransform, typeFactorySupplier);
     }
 
     public Tester withClusterFactory(
@@ -880,7 +981,7 @@ public abstract class SqlToRelTestBase {
       return new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
           enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
           clusterFactory, plannerFactory, configTransform, conformance,
-          contextTransform);
+          contextTransform, typeFactorySupplier);
     }
 
     public Tester withPlannerFactory(
@@ -890,18 +991,35 @@ public abstract class SqlToRelTestBase {
           : new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
               enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
               clusterFactory, plannerFactory, configTransform, conformance,
-              contextTransform);
+              contextTransform, typeFactorySupplier);
+    }
+
+    public Tester withTypeFactorySupplier(
+        Supplier<RelDataTypeFactory> typeFactorySupplier) {
+      return this.typeFactorySupplier == typeFactorySupplier
+          ? this
+          : new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
+              enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
+              clusterFactory, plannerFactory, configTransform, conformance,
+              contextTransform, typeFactorySupplier);
     }
 
     public TesterImpl withContext(UnaryOperator<Context> context) {
       return new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
           enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
           clusterFactory, plannerFactory, configTransform, conformance,
-          context);
+          context, typeFactorySupplier);
     }
 
     public boolean isLateDecorrelate() {
       return enableLateDecorrelate;
+    }
+
+    public Tester withValidatorTransform(UnaryOperator<SqlValidator> transform) {
+      return new TesterImpl(diffRepos, enableDecorrelate, enableTrim,
+          enableLateDecorrelate, enableTypeCoercion, catalogReaderFactory,
+          clusterFactory, plannerFactory, configTransform, conformance,
+          contextTransform, typeFactorySupplier, transform);
     }
   }
 

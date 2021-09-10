@@ -22,6 +22,7 @@ import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.config.NullCollation;
 import org.apache.calcite.linq4j.function.Experimental;
 import org.apache.calcite.rel.RelFieldCollation;
+import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
@@ -269,6 +270,8 @@ public class SqlDialect {
       return DatabaseProduct.CLICKHOUSE;
     case "DBMS:CLOUDSCAPE":
       return DatabaseProduct.DERBY;
+    case "EXASOL":
+      return DatabaseProduct.EXASOL;
     case "HIVE":
       return DatabaseProduct.HIVE;
     case "INGRES":
@@ -538,6 +541,11 @@ public class SqlDialect {
         RelDataTypeSystem.DEFAULT);
   }
 
+  /** Converts table scan hints. The default implementation suppresses all hints. */
+  public void unparseTableScanHints(SqlWriter writer,
+      SqlNodeList hints, int leftPrec, int rightPrec) {
+  }
+
   /**
    * Returns whether the string contains any characters outside the
    * comfortable 7-bit ASCII range (32 through 127, plus linefeed (10) and
@@ -781,10 +789,15 @@ public class SqlDialect {
   * {@code CAST(NULL AS <nulltype>)} is rendered as {@code NULL}. */
   public @Nullable SqlNode getCastSpec(RelDataType type) {
     int maxPrecision = -1;
+    int maxScale = -1;
     if (type instanceof AbstractSqlType) {
       switch (type.getSqlTypeName()) {
       case NULL:
         return null;
+      case DECIMAL:
+        maxScale = getTypeSystem().getMaxScale(type.getSqlTypeName());
+        // fall through
+      case CHAR:
       case VARCHAR:
         // if needed, adjust varchar length to max length supported by the system
         maxPrecision = getTypeSystem().getMaxPrecision(type.getSqlTypeName());
@@ -795,7 +808,7 @@ public class SqlDialect {
       String charSet = type.getCharset() != null && supportsCharSet()
           ? type.getCharset().name()
           : null;
-      return SqlTypeUtil.convertTypeToSpec(type, charSet, maxPrecision);
+      return SqlTypeUtil.convertTypeToSpec(type, charSet, maxPrecision, maxScale);
     }
     return SqlTypeUtil.convertTypeToSpec(type);
   }
@@ -1002,6 +1015,13 @@ public class SqlDialect {
    */
   public boolean supportsGroupByWithCube() {
     return false;
+  }
+
+  /**
+   * Returns whether this dialect support the specified type of join.
+   */
+  public boolean supportsJoinType(JoinRelType joinType) {
+    return true;
   }
 
   /** Returns how NULL values are sorted if an ORDER BY item does not contain
@@ -1255,6 +1275,7 @@ public class SqlDialect {
     ORACLE("Oracle", "\"", NullCollation.HIGH),
     DERBY("Apache Derby", null, NullCollation.HIGH),
     DB2("IBM DB2", null, NullCollation.HIGH),
+    EXASOL("Exasol", "\"", NullCollation.LOW),
     FIREBIRD("Firebird", null, NullCollation.HIGH),
     H2("H2", "\"", NullCollation.HIGH),
     HIVE("Apache Hive", null, NullCollation.LOW),

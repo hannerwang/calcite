@@ -7603,6 +7603,42 @@ public abstract class SqlOperatorBaseTest {
     tester.checkAgg("intersection(x)", values3, "[0, 1, 1]", 0);
   }
 
+  @Test void testModeFunc() {
+    tester.setFor(SqlStdOperatorTable.MODE, VM_EXPAND);
+    tester.checkFails(
+        "mode(^*^)", "Unknown identifier '\\*'", false);
+    strictTester.checkFails(
+        "^mode()^",
+        "Invalid number of arguments to function 'MODE'. Was expecting 1 arguments",
+        false);
+    strictTester.checkFails(
+        "^mode(1,2)^",
+        "Invalid number of arguments to function 'MODE'. Was expecting 1 arguments",
+        false);
+    strictTester.checkFails(
+        "mode(^null^)",
+        "Illegal use of 'NULL'",
+        false);
+
+    tester.checkType("mode('name')", "CHAR(4)");
+    checkAggType(tester, "mode(1)", "INTEGER NOT NULL");
+    checkAggType(tester, "mode(1.2)", "DECIMAL(2, 1) NOT NULL");
+    checkAggType(tester, "mode(DISTINCT 1.5)", "DECIMAL(2, 1) NOT NULL");
+    tester.checkType("mode(cast(null as varchar(2)))", "VARCHAR(2)");
+
+    final String[] values = {"0", "CAST(null AS INTEGER)", "2", "2", "3", "3", "3" };
+    tester.checkAgg("mode(x)", values, "3", 0d);
+    final String[] values2 = {"0", null, null, null, "2", "2"};
+    tester.checkAgg("mode(x)", values2, "2", 0d);
+    final String[] values3 = {};
+    tester.checkAgg("mode(x)", values3, null, 0d);
+    tester.checkAgg("mode(CASE x WHEN 0 THEN NULL ELSE -1 END)",
+        values, -1, 0d);
+    tester.checkAgg("mode(DISTINCT CASE x WHEN 0 THEN NULL ELSE -1 END)",
+        values, -1, 0d);
+    tester.checkAgg("mode(DISTINCT x)", values, 0, 0d);
+  }
+
   @Test void testYear() {
     tester.setFor(
         SqlStdOperatorTable.YEAR,
@@ -8945,6 +8981,38 @@ public abstract class SqlOperatorBaseTest {
         SqlStdOperatorTable.ROW_NUMBER,
         VM_FENNEL,
         VM_JAVA);
+  }
+
+  @Test void testPercentileContFunc() {
+    tester.setFor(SqlStdOperatorTable.PERCENTILE_CONT, VM_FENNEL, VM_JAVA);
+    tester.checkType("percentile_cont(0.25) within group (order by 1)",
+        "DOUBLE NOT NULL");
+    tester.checkFails("percentile_cont(0.25) within group (^order by 'a'^)",
+        "Invalid type 'CHAR' in ORDER BY clause of 'PERCENTILE_CONT' function. "
+            + "Only NUMERIC types are supported", false);
+    tester.checkFails("percentile_cont(0.25) within group (^order by 1, 2^)",
+        "'PERCENTILE_CONT' requires precisely one ORDER BY key", false);
+    tester.checkFails(" ^percentile_cont(2 + 3)^ within group (order by 1)",
+        "Argument to function 'PERCENTILE_CONT' must be a literal", false);
+    tester.checkFails(" ^percentile_cont(2)^ within group (order by 1)",
+        "Argument to function 'PERCENTILE_CONT' must be a numeric literal "
+            + "between 0 and 1", false);
+  }
+
+  @Test void testPercentileDiscFunc() {
+    tester.setFor(SqlStdOperatorTable.PERCENTILE_DISC, VM_FENNEL, VM_JAVA);
+    tester.checkType("percentile_disc(0.25) within group (order by 1)",
+        "DOUBLE NOT NULL");
+    tester.checkFails("percentile_disc(0.25) within group (^order by 'a'^)",
+        "Invalid type 'CHAR' in ORDER BY clause of 'PERCENTILE_DISC' function. "
+            + "Only NUMERIC types are supported", false);
+    tester.checkFails("percentile_disc(0.25) within group (^order by 1, 2^)",
+        "'PERCENTILE_DISC' requires precisely one ORDER BY key", false);
+    tester.checkFails(" ^percentile_disc(2 + 3)^ within group (order by 1)",
+        "Argument to function 'PERCENTILE_DISC' must be a literal", false);
+    tester.checkFails(" ^percentile_disc(2)^ within group (order by 1)",
+        "Argument to function 'PERCENTILE_DISC' must be a numeric literal "
+            + "between 0 and 1", false);
   }
 
   @Test void testCountFunc() {
