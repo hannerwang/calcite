@@ -50,10 +50,13 @@ import static org.apache.calcite.linq4j.Nullness.castNonNull;
  * Records that a particular query is materialized by a particular table.
  */
 public class RelOptMaterialization {
+  //the table scan rel after replaced by materialized table
   public final RelNode tableRel;
   public final @Nullable RelOptTable starRelOptTable;
   public final @Nullable StarTable starTable;
+  //the materialized view table name
   public final List<String> qualifiedTableName;
+  //the materialized view sql rel
   public final RelNode queryRel;
 
   /**

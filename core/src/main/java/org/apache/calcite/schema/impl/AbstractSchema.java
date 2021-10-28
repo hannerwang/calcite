@@ -54,6 +54,8 @@ import static java.util.Objects.requireNonNull;
  *   <li>The name and parent schema are as specified in the constructor
  *       arguments.</li>
  * </ul>
+ *
+ * Why not named as EmptySchema
  */
 public class AbstractSchema implements Schema {
   public AbstractSchema() {

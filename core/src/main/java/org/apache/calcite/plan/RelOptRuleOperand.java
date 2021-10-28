@@ -42,8 +42,9 @@ import java.util.function.Predicate;
  */
 public class RelOptRuleOperand {
   //~ Instance fields --------------------------------------------------------
-
+  //The operand's parent
   private @Nullable RelOptRuleOperand parent;
+  //The rule that the operand is belong to
   private @NotOnlyInitialized RelOptRule rule;
   private final Predicate<RelNode> predicate;
 
@@ -53,7 +54,9 @@ public class RelOptRuleOperand {
   public int ordinalInParent;
   public int ordinalInRule;
   public final @Nullable RelTrait trait;
+  //The matched relational expression clazz
   private final Class<? extends RelNode> clazz;
+  //The operand's children
   private final ImmutableList<RelOptRuleOperand> children;
 
   /**

@@ -371,7 +371,7 @@ public abstract class RelOptRule {
 
   /**
    * Creates a flattened list of this operand and its descendants in prefix
-   * order.
+   * order.(i.e. pre order, not level order traversal)
    *
    * @param rootOperand Root operand
    * @return Flattened list of operands

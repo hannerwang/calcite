@@ -43,7 +43,7 @@ if [ "x$CACHE_SQLLINE_CLASSPATH" != "xY" ] || [ ! -f "$CP" ]; then
   $root/gradlew --console plain -q :buildSqllineClasspath
 fi
 
-VM_OPTS=
+VM_OPTS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=8000
 if [ "$cygwin" ]; then
   # Work around https://github.com/jline/jline2/issues/62
   VM_OPTS=-Djline.terminal=jline.UnixTerminal

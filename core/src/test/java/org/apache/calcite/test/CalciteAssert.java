@@ -786,6 +786,7 @@ public class CalciteAssert {
           JdbcSchema.create(rootSchema, schema.schemaName, dataSource,
               cs.catalog, cs.schema));
     case JDBC_FOODMART:
+      //default HSQLDB first
       cs = DB.foodmart;
       dataSource =
           JdbcSchema.dataSource(cs.url, cs.driver, cs.username, cs.password);
@@ -2046,6 +2047,7 @@ public class CalciteAssert {
   /** Information necessary to create a JDBC connection. Specify one to run
    * tests against a different database. (hsqldb is the default.) */
   public enum DatabaseInstance {
+    //use embedded HSQLDB, see https://github.com/julianhyde/foodmart-data-hsqldb
     HSQLDB(
         new ConnectionSpec(FoodmartHsqldb.URI, "FOODMART", "FOODMART",
             "org.hsqldb.jdbcDriver", "foodmart"),

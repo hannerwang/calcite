@@ -121,6 +121,7 @@ public abstract class RelRule<C extends RelRule.Config> extends RelOptRule {
     /** Empty configuration. */
     RelRule.Config EMPTY = ImmutableBeans.create(Config.class)
         .withRelBuilderFactory(RelFactories.LOGICAL_BUILDER)
+        //The operand supplier will be used in RelRule constructor
         .withOperandSupplier(b -> {
           throw new IllegalArgumentException("Rules must have at least one "
               + "operand. Call Config.withOperandSupplier to specify them.");

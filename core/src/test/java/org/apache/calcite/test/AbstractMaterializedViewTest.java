@@ -145,6 +145,7 @@ public abstract class AbstractMaterializedViewTest {
           defaultSchema = rootSchema.add("hr",
               new ReflectiveSchema(new MaterializationTest.HrFKUKSchema()));
         } else {
+          //in test, the rootSchema may be always empty schema
           defaultSchema = CalciteAssert.addSchema(rootSchema, sql.getDefaultSchemaSpec());
         }
         final RelNode queryRel = toRel(cluster, rootSchema, defaultSchema, sql.getQuery());

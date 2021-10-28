@@ -99,7 +99,7 @@ public class HepPlanner extends AbstractRelOptPlanner {
   private int graphSizeLastGC;
 
   private int nTransformationsLastGC;
-
+  //Keep the graph a tree (noDag = true) or allow DAG (noDag = false)
   private final boolean noDag;
 
   /**

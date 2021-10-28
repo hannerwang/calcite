@@ -50,6 +50,7 @@ public abstract class RelOptRuleCall {
   //~ Instance fields --------------------------------------------------------
 
   public final int id;
+  //The root operand that has been matched by the rule
   protected final RelOptRuleOperand operand0;
   protected Map<RelNode, List<RelNode>> nodeInputs;
   public final RelOptRule rule;
@@ -133,6 +134,7 @@ public abstract class RelOptRuleCall {
    *
    * @return matched relational expressions
    * @see #rel(int)
+   * @see #getChildRels(RelNode)
    */
   public List<RelNode> getRelList() {
     return ImmutableList.copyOf(rels);
@@ -173,6 +175,7 @@ public abstract class RelOptRuleCall {
    * @return Children of relational expression
    */
   public @Nullable List<RelNode> getChildRels(RelNode rel) {
+    //The nodeInputs are the children
     return nodeInputs.get(rel);
   }
 
