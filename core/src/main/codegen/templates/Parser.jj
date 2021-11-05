@@ -18,13 +18,36 @@
 
 <@pp.changeOutputFile name="javacc/Parser.jj" />
 
+/**
+* STATIC If true, all methods and class variables are specified as static in the generated parser and token manager.
+* This allows only one parser object to be present, but it improves the performance of the parser.
+* To perform multiple parses during one run of your Java program,
+* you will have to call the ReInit() method to reinitialize your parser if it is static.
+* If the parser is non-static, you may use the new operator to construct as many parsers as you wish.
+* These can all be used simultaneously from different threads.
+*
+* UNICODE_INPUT When set to true, the generated parser uses uses an input stream object that reads Unicode files.
+* By default, ASCII files are assumed. This option is ignored if either of options USER_TOKEN_MANAGER,
+* USER_CHAR_STREAM is set to true.
+*
+* IGNORE_CASE true causes the generated token manager to ignore case in the token specifications and the input files.
+* This is useful for writing grammars for languages such as HTML.
+*
+*/
 options {
     STATIC = false;
     IGNORE_CASE = true;
     UNICODE_INPUT = true;
 }
 
-
+/**
+* javacc_input ::= javacc_options
+                   "PARSER_BEGIN" "(" <IDENTIFIER> ")"
+                   java_compilation_unit
+                   "PARSER_END" "(" <IDENTIFIER> ")"
+                   ( production )*
+                   <EOF>
+*/
 PARSER_BEGIN(${parser.class})
 
 package ${parser.package};
@@ -229,6 +252,9 @@ public class ${parser.class} extends SqlAbstractParserImpl
         return SqlExpressionEof();
     }
 
+    /**
+    * java_compilation_unit can call productions directly
+    */
     public SqlNode parseSqlStmtEof() throws Exception {
         return SqlStmtEof();
     }
@@ -265,6 +291,9 @@ PARSER_END(${parser.class})
  ***************************************/
 
 /* For Debug */
+/**
+* javacode_production
+*/
 JAVACODE
 void debug_message1() {
     LOGGER.info("{} , {}", getToken(0).image, getToken(1).image);
@@ -627,22 +656,43 @@ SqlNode OrderedQueryOrExpr(ExprContext exprContext) :
     SqlNode count = null;
 }
 {
+    /**
+    * expansion	::=	( expansion_unit )*
+    */
     (
         e = QueryOrExpr(exprContext)
     )
+    /**
+    * expansion_unit ::= local_lookahead
+                      | java_block
+                      | "(" expansion_choices ")" [ "+" | "*" | "?" ]
+                      | "[" expansion_choices "]"
+                      | [ java_assignment_lhs "=" ] regular_expression
+                      | [ java_assignment_lhs "=" ] java_identifier "(" java_expression_list ")"
+
+      "[" expansion_choices "]" represents optional , which is equivalent to "(" expansion_choices ")" "?"
+    */
     [
         // use the syntactic type of the expression we just parsed
         // to decide whether ORDER BY makes sense
         orderBy = OrderBy(e.isA(SqlKind.QUERY))
     ]
     [
+        //regular_expression
         // Postgres-style syntax. "LIMIT ... OFFSET ..."
         <LIMIT>
         (
             // MySQL-style syntax. "LIMIT start, count"
             LOOKAHEAD(2)
             start = UnsignedNumericLiteralOrParam()
-            <COMMA> count = UnsignedNumericLiteralOrParam() {
+            <COMMA> count = UnsignedNumericLiteralOrParam() {//java_block, i.e. parser action
+                /**
+                * An expansion unit can be a set of Java declarations and code enclosed within braces (the Java block).
+                * These are also called parser actions. This is generated into the method parsing the non-terminal at
+                * the appropriate location. This block is executed whenever the parsing process crosses this point
+                * successfully. When JavaCC processes the Java block, it does not perform any detailed syntax or
+                * semantic checking.
+                */
                 if (!this.conformance.isLimitStartCountAllowed()) {
                     throw SqlUtil.newContextException(getPos(), RESOURCE.limitStartCountNotAllowed());
                 }
@@ -665,6 +715,7 @@ SqlNode OrderedQueryOrExpr(ExprContext exprContext) :
         <FETCH> ( <FIRST> | <NEXT> ) count = UnsignedNumericLiteralOrParam()
         ( <ROW> | <ROWS> ) <ONLY>
     ]
+    //java_block, i.e. parser action
     {
         if (orderBy != null || start != null || count != null) {
             if (orderBy == null) {
@@ -689,6 +740,9 @@ SqlNode LeafQuery(ExprContext exprContext) :
         // ensure a query is legal in this context
         checkQueryExpression(exprContext);
     }
+    /**
+    * expansion_choices ::= expansion ( "|" expansion )*
+    */
     e = SqlSelect() { return e; }
 |
     e = TableConstructor() { return e; }
@@ -818,6 +872,11 @@ SqlNodeList ParenthesizedQueryOrCommaListWithDefault(
             break;
         }
     }
+    /**
+    * expansion_choices ::= expansion ( "|" expansion )*
+    * expansion	::=	( expansion_unit )*
+    * "(" expansion_choices ")" [ "+" | "*" | "?" ]
+    */
     (
         e = OrderedQueryOrExpr(firstExprContext)
     |
@@ -8135,6 +8194,10 @@ void NonReservedKeyWord2of3() :
  * Lexical Descriptions                  *
  *****************************************/
 
+/**
+*  class level declarations, are accessible from all lexical actions.
+*  the curLexState is TOKEN_MGR_DECLS inherent state.
+*/
 TOKEN_MGR_DECLS : {
     final List<Integer> lexicalStateStack = new ArrayList<Integer>();
 
@@ -8203,13 +8266,46 @@ of the 'normal states'.
 }
 
 /* COMMENTS */
-
+/**
+* regular_expr_production ::= [ lexical_state_list ] regexpr_kind [ "[" "IGNORE_CASE" "]" ] ":"
+* "{" regexpr_spec ( "|" regexpr_spec )* "}"
+* So it's a regular_expr_production
+*
+* only if the regexpr_spec matches the input, the token could be generated.
+*/
 <DEFAULT, DQID, BTID, BQID, BQHID> TOKEN :
+/**
+* The TOKEN means:
+* the sequence that the regular_expression in regexpr_spec matches will be a TOKEN
+* so "/*+" will be a TOKEN labeled by HINT_BEG, the label represents "/*+" and can be used elsewhere
+* search HINT_BEG in this file
+*/
 {
+    /**
+    * It's a regexpr_spec
+    * regexpr_spec ::= regular_expression [ java_block ](the lexical action) [ ":" java_identifier ]
+    * regular_expression ::= .. | "<" [ [ "#" ] java_identifier ":" ] complex_regular_expression_choices ">"
+    * complex_regular_expression_choices ::= complex_regular_expression ( "|" complex_regular_expression )*
+    * complex_regular_expression ::= ( complex_regular_expression_unit )*
+    * complex_regular_expression_unit ::= java_string_literal
+    */
     < HINT_BEG: "/*+">
 |   < COMMENT_END: "*/" >
 }
 
+/**
+*  : IN_FORMAL_COMMENT represents that switch to IN_FORMAL_COMMENT lexical state if "/**" ~["/"]
+*  (java_string_literal character_list) matches input,
+*  it's similar to switchTo(IN_FORMAL_COMMENT)
+*  <DEFAULT, DQID, BTID, BQID, BQHID> is the lexical_state_list
+*  MORE means that the matched sequence will be prepended to the next token.
+*
+*  "/**" ~["/"] is complex_regular_expression ::= ( complex_regular_expression_unit )*
+*  i.e. java_string_literal character_list, A match for a complex regular expression is a concatenation of matches
+*  to the complex regular expression units.
+*  ~["/"] only match one character, so we need <IN_FORMAL_COMMENT> : MORE
+*  pushState(); save current state before switch to IN_FORMAL_COMMENT
+*/
 <DEFAULT, DQID, BTID, BQID, BQHID> MORE :
 {
     <"/**" ~["/"]> { pushState(); } : IN_FORMAL_COMMENT
@@ -8225,6 +8321,12 @@ of the 'normal states'.
     <SINGLE_LINE_COMMENT: ("//"|"--")(~["\n","\r"])* ("\n"|"\r"|"\r\n")? >
 }
 
+/**
+*  Comment will be prepended to the this token.
+*  popState() will make lexer return to previous state
+*  The MORE will be prepended to this token, but this token
+*  has no lexical action to catch the image.
+*/
 <IN_FORMAL_COMMENT>
 SPECIAL_TOKEN :
 {
@@ -8237,6 +8339,9 @@ SPECIAL_TOKEN :
     <MULTI_LINE_COMMENT: <COMMENT_END> > { popState(); }
 }
 
+/**
+* Because ~["/"] only match one character, we need this match more characters
+*/
 <IN_FORMAL_COMMENT,IN_MULTI_LINE_COMMENT>
 MORE :
 {
@@ -8366,6 +8471,10 @@ MORE :
  * It is used as the default production for parser extension points;
  * derived parsers replace it with a real production when they want to
  * implement a particular extension point.
+ * If the boolean expression evaluates to true, the parsing continues normally.
+ * otherwise if the local lookahead specification is at a choice point,
+ *   the current choice is not taken and the next choice is considered.
+ *   otherwise parsing aborts with a parse error.
  */
 void UnusedExtension() :
 {
