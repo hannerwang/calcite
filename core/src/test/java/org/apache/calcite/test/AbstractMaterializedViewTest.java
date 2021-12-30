@@ -48,7 +48,6 @@ import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.sql2rel.StandardConvertletTable;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
-import org.apache.calcite.util.ImmutableBeans;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.TestUtil;
 import org.apache.calcite.util.Util;
@@ -56,10 +55,13 @@ import org.apache.calcite.util.Util;
 import com.google.common.collect.ImmutableList;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.immutables.value.Value;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+
+import static org.apache.calcite.test.CalciteAssert.SchemaSpec;
 
 /**
  * Abstract class to provide testing environment and utilities for extensions.
@@ -88,10 +90,8 @@ public abstract class AbstractMaterializedViewTest {
   }
 
   protected Sql sql(String materialize, String query) {
-    return ImmutableBeans.create(Sql.class)
-        .withMaterializations(ImmutableList.of(Pair.of(materialize, "MV0")))
-        .withQuery(query)
-        .withTester(this);
+    return ImmutableSql.of(query, this)
+        .withMaterializations(ImmutableList.of(Pair.of(materialize, "MV0")));
   }
 
   /** Checks that a given query can use a materialized view with a given
@@ -223,6 +223,7 @@ public abstract class AbstractMaterializedViewTest {
   }
 
   /** Fluent class that contains information necessary to run a test. */
+  @Value.Immutable(singleton = false, builder = true)
   public interface Sql {
 
     default void ok() {
@@ -233,23 +234,20 @@ public abstract class AbstractMaterializedViewTest {
       getTester().checkNoMaterialize(this);
     }
 
-    @ImmutableBeans.Property
-    CalciteAssert.@Nullable SchemaSpec getDefaultSchemaSpec();
-    Sql withDefaultSchemaSpec(CalciteAssert.@Nullable SchemaSpec spec);
+    @Nullable SchemaSpec getDefaultSchemaSpec();
+    Sql withDefaultSchemaSpec(@Nullable SchemaSpec spec);
 
-    @ImmutableBeans.Property
     List<Pair<String, String>> getMaterializations();
-    Sql withMaterializations(List<Pair<String, String>> materialize);
+    Sql withMaterializations(Iterable<? extends Pair<String, String>> materialize);
 
-    @ImmutableBeans.Property
+    @Value.Parameter
     String getQuery();
     Sql withQuery(String query);
 
-    @ImmutableBeans.Property
     @Nullable Function<String, Boolean> getChecker();
     Sql withChecker(@Nullable Function<String, Boolean> checker);
 
-    @ImmutableBeans.Property
+    @Value.Parameter
     AbstractMaterializedViewTest getTester();
     Sql withTester(AbstractMaterializedViewTest tester);
   }

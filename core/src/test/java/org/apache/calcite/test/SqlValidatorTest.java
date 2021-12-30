@@ -7554,6 +7554,75 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
         .fails("WITHIN GROUP must not contain aggregate expression");
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-4644">[CALCITE-4644]
+   * Add PERCENTILE_CONT and PERCENTILE_DISC aggregate functions</a>. */
+  @Test void testPercentile() {
+    final String sql = "select\n"
+        + " percentile_cont(0.25) within group (order by sal) as c,\n"
+        + " percentile_disc(0.5) within group (order by sal desc) as d\n"
+        + "from emp\n"
+        + "group by deptno";
+    sql(sql)
+        .type("RecordType(DOUBLE NOT NULL C, DOUBLE NOT NULL D) NOT NULL");
+  }
+
+  /** Tests that {@code PERCENTILE_CONT} only allows numeric fields. */
+  @Test void testPercentileContMustOrderByNumeric() {
+    final String sql = "select\n"
+        + " percentile_cont(0.25) within group (^order by ename^)\n"
+        + "from emp";
+    sql(sql)
+        .fails("Invalid type 'VARCHAR' in ORDER BY clause of "
+            + "'PERCENTILE_CONT' function. Only NUMERIC types are supported");
+  }
+
+  /** Tests that {@code PERCENTILE_CONT} only allows one sort key. */
+  @Test void testPercentileContMultipleOrderByFields() {
+    final String sql = "select\n"
+        + " percentile_cont(0.25) within group (^order by deptno, empno^)\n"
+        + "from emp";
+    sql(sql)
+        .fails("'PERCENTILE_CONT' requires precisely one ORDER BY key");
+  }
+
+  @Test void testPercentileContFractionMustBeLiteral() {
+    final String sql = "select\n"
+        + " ^percentile_cont(deptno)^ within group (order by empno)\n"
+        + "from emp\n"
+        + "group by deptno";
+    sql(sql)
+        .fails("Argument to function 'PERCENTILE_CONT' must be a literal");
+  }
+
+  @Test void testPercentileContFractionOutOfRange() {
+    final String sql = "select\n"
+        + " ^percentile_cont(1.5)^ within group (order by deptno)\n"
+        + "from emp";
+    sql(sql)
+        .fails("Argument to function 'PERCENTILE_CONT' must be a numeric "
+            + "literal between 0 and 1");
+  }
+
+  /** Tests that {@code PERCENTILE_DISC} only allows numeric fields. */
+  @Test void testPercentileDiscMustOrderByNumeric() {
+    final String sql = "select\n"
+        + " percentile_disc(0.25) within group (^order by ename^)\n"
+        + "from emp";
+    sql(sql)
+        .fails("Invalid type 'VARCHAR' in ORDER BY clause of "
+            + "'PERCENTILE_DISC' function. Only NUMERIC types are supported");
+  }
+
+  /** Tests that {@code PERCENTILE_DISC} only allows one sort key. */
+  @Test void testPercentileDiscMultipleOrderByFields() {
+    final String sql = "select\n"
+        + " percentile_disc(0.25) within group (^order by deptno, empno^)\n"
+        + "from emp";
+    sql(sql)
+        .fails("'PERCENTILE_DISC' requires precisely one ORDER BY key");
+  }
+
   @Test void testCorrelatingVariables() {
     // reference to unqualified correlating column
     sql("select * from emp where exists (\n"
@@ -8259,6 +8328,19 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
     sql("SELECT MAX(ename) FROM emp").ok();
     sql("SELECT MIN(5.5) FROM emp").ok();
     sql("SELECT MAX(5) FROM emp").ok();
+  }
+
+  @Test void testModeFunction() {
+    sql("select MODE(sal) from emp").ok();
+    sql("select MODE(sal) over (order by empno) from emp").ok();
+    sql("select MODE(ename) from emp where sal=3000");
+    sql("select MODE(sal) from emp group by deptno").ok();
+    sql("select MODE(sal) from emp group by deptno order by deptno").ok();
+    sql("select deptno,\n"
+        + "^mode(empno)^ within group(order by 1)\n"
+        + "from emp\n"
+        + "group by deptno")
+        .fails("Aggregate expression 'MODE' must not contain a WITHIN GROUP clause");
   }
 
   @Test void testSomeEveryAndIntersectionFunctions() {
@@ -9459,6 +9541,7 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
         + "- left\n"
         + "- -\n"
         + "EXISTS pre\n"
+        + "UNIQUE pre\n"
         + "\n"
         + "< ALL left\n"
         + "< SOME left\n"
@@ -9544,12 +9627,13 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
         + "RESPECT NULLS -\n"
         + "TABLESAMPLE -\n"
         + "\n"
+        + "NULLS FIRST post\n"
+        + "NULLS LAST post\n"
+        + "\n"
         + "INTERSECT left\n"
         + "INTERSECT ALL left\n"
         + "MULTISET INTERSECT ALL left\n"
         + "MULTISET INTERSECT DISTINCT left\n"
-        + "NULLS FIRST post\n"
-        + "NULLS LAST post\n"
         + "\n"
         + "EXCEPT left\n"
         + "EXCEPT ALL left\n"

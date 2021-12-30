@@ -26,20 +26,20 @@ limitations under the License.
 
 # Upcoming talks
 
-There are no upcoming talks at the moment. Stay tuned!
+None scheduled.
 
 # Project Members
 
 Name (Apache ID) | Github | Org | Role
 :--------------- | :----- | :-- | :---
-{% for c in site.data.contributors %}{% unless c.emeritus %}{% if c.homepage %}<a href="{{ c.homepage }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %} (<a href="https://people.apache.org/phonebook.html?uid={{ c.apacheId }}">{{ c.apacheId }}</a>) | <a href="https://github.com/{{ c.githubId }}"><img width="64" src="{% unless c.avatar %}https://github.com/{{ c.githubId }}.png{% else %}{{ c.avatar }}{% endunless %}"></a> | {{ c.org }} | {{ c.role }}
+{% for c in site.data.contributors %}{% unless c.emeritus %}{% if c.homepage %}<a href="{{ c.homepage }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %} (<a href="https://people.apache.org/phonebook.html?uid={{ c.apacheId }}">{{ c.apacheId }}</a>) {{ c.pronouns }} | <a href="https://github.com/{{ c.githubId }}"><img width="64" src="{% unless c.avatar %}https://github.com/{{ c.githubId }}.png{% else %}{{ c.avatar }}{% endunless %}"></a> | {{ c.org }} | {{ c.role }}
 {% endunless %}{% endfor %}
 
 Emeritus members
 
 Name (Apache ID) | Github | Org | Role
 :--------------- | :----- | :-- | :---
-{% for c in site.data.contributors %}{% if c.emeritus %}{% if c.homepage %}<a href="{{ c.homepage }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %} (<a href="https://people.apache.org/phonebook.html?uid={{ c.apacheId }}">{{ c.apacheId }}</a>) | <a href="https://github.com/{{ c.githubId }}"><img width="64" src="{% unless c.avatar %}https://github.com/{{ c.githubId }}.png{% else %}{{ c.avatar }}{% endunless %}"></a> | {{ c.org }} | {{ c.role }}
+{% for c in site.data.contributors %}{% if c.emeritus %}{% if c.homepage %}<a href="{{ c.homepage }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %} (<a href="https://people.apache.org/phonebook.html?uid={{ c.apacheId }}">{{ c.apacheId }}</a>) {{ c.pronouns }} | <a href="https://github.com/{{ c.githubId }}"><img width="64" src="{% unless c.avatar %}https://github.com/{{ c.githubId }}.png{% else %}{{ c.avatar }}{% endunless %}"></a> | {{ c.org }} | {{ c.role }}
 {% endif %}{% endfor %}
 
 # Mailing Lists
@@ -86,6 +86,23 @@ Want to learn more about Calcite?
 
 Watch some presentations and read through some slide decks about
 Calcite, or attend one of the [upcoming talks](#upcoming-talks).
+
+## Morel, a functional query language (Julian Hyde)
+
+At [Strange Loop 2021](https://thestrangeloop.com/2021/morel-a-functional-query-language.html),
+St. Louis, Missouri, September 30, 2021;
+[[slides](https://www.slideshare.net/julianhyde/morel-a-functional-query-language)].
+
+## Building modern SQL query optimizers with Apache Calcite
+
+At [ApacheCon 2021](https://www.apachecon.com/acah2021/tracks/bigdatasql.html), September 22, 2021.
+
+## Apache Calcite Tutorial
+
+At [BOSS 2021](https://boss-workshop.github.io/boss-2021/), Copenhagen, Denmark, August 16, 2021;
+[[summary](https://github.com/zabetak/slides/blob/master/2021/boss-workshop/apache-calcite-tutorial.md)],
+[[slides](https://www.slideshare.net/StamatisZampetakis/apache-calcite-tutorial-boss-21)],
+[[pdf](https://github.com/zabetak/slides/blob/master/2021/boss-workshop/apache-calcite-tutorial.pdf)].
 
 ## An introduction to query processing & Apache Calcite
 

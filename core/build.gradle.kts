@@ -14,8 +14,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import com.github.autostyle.gradle.AutostyleTask
 import com.github.vlsi.gradle.crlf.CrLfSpec
 import com.github.vlsi.gradle.crlf.LineEndings
+import com.github.vlsi.gradle.ide.dsl.settings
+import com.github.vlsi.gradle.ide.dsl.taskTriggers
 
 plugins {
     kotlin("jvm")
@@ -51,7 +54,10 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-core")
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml")
-    implementation("com.google.uzaygezen:uzaygezen-core")
+    implementation("com.google.uzaygezen:uzaygezen-core") {
+        exclude("log4j", "log4j").because("conflicts with log4j-slf4j-impl which uses log4j2 and" +
+                " also leaks transitively to projects depending on calcite-core")
+    }
     implementation("com.jayway.jsonpath:json-path")
     implementation("com.yahoo.datasketches:sketches-core")
     implementation("commons-codec:commons-codec")
@@ -61,37 +67,30 @@ dependencies {
     implementation("commons-io:commons-io")
     implementation("org.codehaus.janino:commons-compiler")
     implementation("org.codehaus.janino:janino")
+    annotationProcessor("org.immutables:value")
+    compileOnly("org.immutables:value-annotations")
+    compileOnly("com.google.code.findbugs:jsr305")
+    testAnnotationProcessor("org.immutables:value")
+    testCompileOnly("org.immutables:value-annotations")
+    testCompileOnly("com.google.code.findbugs:jsr305")
 
     testH2("com.h2database:h2")
     testMysql("mysql:mysql-connector-java")
     testOracle("com.oracle.ojdbc:ojdbc8")
     testPostgresql("org.postgresql:postgresql")
 
+    testImplementation(project(":testkit"))
     testImplementation("commons-lang:commons-lang")
-    testImplementation("net.hydromatic:foodmart-data-hsqldb")
     testImplementation("net.hydromatic:foodmart-queries")
     testImplementation("net.hydromatic:quidem")
-    testImplementation("net.hydromatic:scott-data-hsqldb")
     testImplementation("org.apache.calcite.avatica:avatica-server")
     testImplementation("org.apache.commons:commons-pool2")
     testImplementation("org.hsqldb:hsqldb")
-    testImplementation("org.incava:java-diff")
     testImplementation("sqlline:sqlline")
     testImplementation(kotlin("stdlib-jdk8"))
     testImplementation(kotlin("test"))
     testImplementation(kotlin("test-junit5"))
-    testRuntimeOnly("org.slf4j:slf4j-log4j12")
-}
-
-// There are users that reuse/extend test code (e.g. Apache Felix)
-// So publish test jar to Nexus repository
-// TODO: remove when calcite-test-framework is extracted to a standalone artifact
-publishing {
-    publications {
-        named<MavenPublication>(project.name) {
-            artifact(tasks.testJar.get())
-        }
-    }
+    testRuntimeOnly("org.apache.logging.log4j:log4j-slf4j-impl")
 }
 
 tasks.jar {
@@ -165,6 +164,11 @@ val javaCCMain by tasks.registering(org.apache.calcite.buildtools.javacc.JavaCCT
     packageName.set("org.apache.calcite.sql.parser.impl")
 }
 
+tasks.compileKotlin {
+    dependsOn(versionClass)
+    dependsOn(javaCCMain)
+}
+
 val fmppTest by tasks.registering(org.apache.calcite.buildtools.fmpp.FmppTask::class) {
     config.set(file("src/test/codegen/config.fmpp"))
     templates.set(file("src/main/codegen/templates"))
@@ -179,12 +183,74 @@ val javaCCTest by tasks.registering(org.apache.calcite.buildtools.javacc.JavaCCT
     packageName.set("org.apache.calcite.sql.parser.parserextensiontesting")
 }
 
+tasks.compileTestKotlin {
+    dependsOn(javaCCTest)
+}
+
+tasks.withType<Checkstyle>().configureEach {
+    mustRunAfter(versionClass)
+    mustRunAfter(javaCCMain)
+    mustRunAfter(javaCCTest)
+}
+
+tasks.withType<AutostyleTask>().configureEach {
+    mustRunAfter(versionClass)
+    mustRunAfter(javaCCMain)
+    mustRunAfter(javaCCTest)
+}
+
 ide {
     fun generatedSource(javacc: TaskProvider<org.apache.calcite.buildtools.javacc.JavaCCTask>, sourceSet: String) =
         generatedJavaSources(javacc.get(), javacc.get().output.get().asFile, sourceSets.named(sourceSet))
 
     generatedSource(javaCCMain, "main")
     generatedSource(javaCCTest, "test")
+}
+
+fun JavaCompile.configureAnnotationSet(sourceSet: SourceSet) {
+    source = sourceSet.java
+    classpath = sourceSet.compileClasspath
+    options.compilerArgs.add("-proc:only")
+    org.gradle.api.plugins.internal.JvmPluginsHelper.configureAnnotationProcessorPath(sourceSet, sourceSet.java, options, project)
+    destinationDirectory.set(temporaryDir)
+
+    // only if we aren't running java compilation, since doing twice fails (in some places)
+    onlyIf { !project.gradle.taskGraph.hasTask(sourceSet.getCompileTaskName("java")) }
+}
+
+val annotationProcessorMain by tasks.registering(JavaCompile::class) {
+    configureAnnotationSet(sourceSets.main.get())
+}
+
+val annotationProcessorTest by tasks.registering(JavaCompile::class) {
+    val kotlinTestCompile = tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>()
+        .getByName("compileTestKotlin")
+
+    dependsOn(javaCCTest, kotlinTestCompile)
+
+    configureAnnotationSet(sourceSets.test.get())
+    classpath += files(kotlinTestCompile.destinationDirectory.get())
+
+    // only if we aren't running compileJavaTest, since doing twice fails.
+    onlyIf { tasks.findByPath("compileTestJava")?.enabled != true }
+}
+
+ide {
+    // generate annotation processed files on project import/sync.
+    fun addSync(compile: TaskProvider<JavaCompile>) {
+        project.rootProject.configure<org.gradle.plugins.ide.idea.model.IdeaModel> {
+            project {
+                settings {
+                    taskTriggers {
+                        afterSync(compile.get())
+                    }
+                }
+            }
+        }
+    }
+
+    addSync(annotationProcessorMain)
+    addSync(annotationProcessorTest)
 }
 
 val integTestAll by tasks.registering() {

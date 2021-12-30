@@ -237,4 +237,5 @@ public abstract class Bug {
     Util.discard(remark);
     return false;
   }
+
 }

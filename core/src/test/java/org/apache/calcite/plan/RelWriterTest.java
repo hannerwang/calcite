@@ -18,9 +18,11 @@ package org.apache.calcite.plan;
 
 import org.apache.calcite.adapter.java.ReflectiveSchema;
 import org.apache.calcite.avatica.util.TimeUnit;
+import org.apache.calcite.plan.volcano.VolcanoPlanner;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelCollations;
 import org.apache.calcite.rel.RelDistribution;
+import org.apache.calcite.rel.RelDistributionTraitDef;
 import org.apache.calcite.rel.RelDistributions;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelShuttleImpl;
@@ -28,6 +30,7 @@ import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.TableModify;
 import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.externalize.RelJson;
 import org.apache.calcite.rel.externalize.RelJsonReader;
 import org.apache.calcite.rel.externalize.RelJsonWriter;
 import org.apache.calcite.rel.logical.LogicalAggregate;
@@ -37,6 +40,7 @@ import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.logical.LogicalTableModify;
 import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCorrelVariable;
@@ -54,14 +58,15 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.fun.SqlTrimFunction;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeName;
-import org.apache.calcite.test.JdbcTest;
 import org.apache.calcite.test.MockSqlOperatorTable;
 import org.apache.calcite.test.RelBuilderTest;
+import org.apache.calcite.test.schemata.hr.HrSchema;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.Holder;
 import org.apache.calcite.util.ImmutableBitSet;
+import org.apache.calcite.util.JsonBuilder;
 import org.apache.calcite.util.TestUtil;
 
 import com.google.common.collect.ImmutableList;
@@ -84,7 +89,9 @@ import java.util.stream.Stream;
 import static org.apache.calcite.test.Matchers.isLinux;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Unit test for {@link org.apache.calcite.rel.externalize.RelJson}.
@@ -422,6 +429,65 @@ class RelWriterTest {
     return Stream.of(SqlExplainFormat.TEXT, SqlExplainFormat.DOT);
   }
 
+  /** Unit test for {@link RelJson#toJson(Object)} for an object of type
+   * {@link RelDataType}. */
+  @Test void testTypeJson() {
+    int i = Frameworks.withPlanner((cluster, relOptSchema, rootSchema) -> {
+      final RelDataTypeFactory typeFactory = cluster.getTypeFactory();
+      final RelDataType type = typeFactory.builder()
+          .add("i", typeFactory.createSqlType(SqlTypeName.INTEGER))
+          .nullable(false)
+          .add("v", typeFactory.createSqlType(SqlTypeName.VARCHAR, 9))
+          .nullable(true)
+          .add("r", typeFactory.builder()
+              .add("d", typeFactory.createSqlType(SqlTypeName.DATE))
+              .nullable(false)
+              .build())
+          .nullableRecord(false)
+          .build();
+      final JsonBuilder jsonBuilder = new JsonBuilder();
+      final RelJson json = new RelJson(jsonBuilder);
+      final Object o = json.toJson(type);
+      assertThat(o, notNullValue());
+      final String s = jsonBuilder.toJsonString(o);
+      final String expectedJson = "{\n"
+          + "  \"fields\": [\n"
+          + "    {\n"
+          + "      \"type\": \"INTEGER\",\n"
+          + "      \"nullable\": false,\n"
+          + "      \"name\": \"i\"\n"
+          + "    },\n"
+          + "    {\n"
+          + "      \"type\": \"VARCHAR\",\n"
+          + "      \"nullable\": true,\n"
+          + "      \"precision\": 9,\n"
+          + "      \"name\": \"v\"\n"
+          + "    },\n"
+          + "    {\n"
+          + "      \"fields\": {\n"
+          + "        \"fields\": [\n"
+          + "          {\n"
+          + "            \"type\": \"DATE\",\n"
+          + "            \"nullable\": false,\n"
+          + "            \"name\": \"d\"\n"
+          + "          }\n"
+          + "        ],\n"
+          + "        \"nullable\": false\n"
+          + "      },\n"
+          + "      \"nullable\": false,\n"
+          + "      \"name\": \"r\"\n"
+          + "    }\n"
+          + "  ],\n"
+          + "  \"nullable\": false\n"
+          + "}";
+      assertThat(s, is(expectedJson));
+      final RelDataType type2 = json.toType(typeFactory, o);
+      assertThat(type2, is(type));
+      return 0;
+    });
+    assertThat(i, is(0));
+  }
+
   /**
    * Unit test for {@link org.apache.calcite.rel.externalize.RelJsonWriter} on
    * a simple tree of relational expressions, consisting of a table and a
@@ -431,7 +497,7 @@ class RelWriterTest {
     String s =
         Frameworks.withPlanner((cluster, relOptSchema, rootSchema) -> {
           rootSchema.add("hr",
-              new ReflectiveSchema(new JdbcTest.HrSchema()));
+              new ReflectiveSchema(new HrSchema()));
           LogicalTableScan scan =
               LogicalTableScan.create(cluster,
                   relOptSchema.getTableForMember(
@@ -476,7 +542,7 @@ class RelWriterTest {
     String s =
         Frameworks.withPlanner((cluster, relOptSchema, rootSchema) -> {
           rootSchema.add("hr",
-              new ReflectiveSchema(new JdbcTest.HrSchema()));
+              new ReflectiveSchema(new HrSchema()));
           LogicalTableScan scan =
               LogicalTableScan.create(cluster,
                   relOptSchema.getTableForMember(
@@ -519,6 +585,43 @@ class RelWriterTest {
     assertThat(s, is(XX2));
   }
 
+  @Test public void testExchange() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder builder = RelBuilder.create(config);
+    final RelNode rel = builder
+        .scan("EMP")
+        .exchange(RelDistributions.hash(ImmutableList.of(0, 1)))
+        .build();
+    final String relJson = RelOptUtil.dumpPlan("", rel,
+        SqlExplainFormat.JSON, SqlExplainLevel.EXPPLAN_ATTRIBUTES);
+    String s = deserializeAndDumpToTextFormat(getSchema(rel), relJson);
+    final String expected = ""
+        + "LogicalExchange(distribution=[hash[0, 1]])\n"
+        + "  LogicalTableScan(table=[[scott, EMP]])\n";
+    assertThat(s, isLinux(expected));
+  }
+
+  @Test public void testExchangeWithDistributionTraitDef() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder builder = RelBuilder.create(config);
+    final RelNode rel = builder
+        .scan("EMP")
+        .exchange(RelDistributions.hash(ImmutableList.of(0, 1)))
+        .build();
+    final String relJson = RelOptUtil.dumpPlan("", rel,
+        SqlExplainFormat.JSON, SqlExplainLevel.EXPPLAN_ATTRIBUTES);
+
+    VolcanoPlanner planner = new VolcanoPlanner();
+    planner.addRelTraitDef(RelDistributionTraitDef.INSTANCE);
+    RelOptCluster cluster = RelOptCluster.create(planner, builder.getRexBuilder());
+
+    String plan = deserializeAndDump(cluster, getSchema(rel), relJson, SqlExplainFormat.TEXT);
+    final String expected = ""
+        + "LogicalExchange(distribution=[hash[0, 1]])\n"
+        + "  LogicalTableScan(table=[[scott, EMP]])\n";
+    assertThat(plan, isLinux(expected));
+  }
+
   /**
    * Unit test for {@link org.apache.calcite.rel.externalize.RelJsonReader}.
    */
@@ -527,7 +630,7 @@ class RelWriterTest {
         Frameworks.withPlanner((cluster, relOptSchema, rootSchema) -> {
           SchemaPlus schema =
               rootSchema.add("hr",
-                  new ReflectiveSchema(new JdbcTest.HrSchema()));
+                  new ReflectiveSchema(new HrSchema()));
           final RelJsonReader reader =
               new RelJsonReader(cluster, relOptSchema, schema);
           RelNode node;
@@ -554,7 +657,7 @@ class RelWriterTest {
         Frameworks.withPlanner((cluster, relOptSchema, rootSchema) -> {
           SchemaPlus schema =
               rootSchema.add("hr",
-                  new ReflectiveSchema(new JdbcTest.HrSchema()));
+                  new ReflectiveSchema(new HrSchema()));
           final RelJsonReader reader =
               new RelJsonReader(cluster, relOptSchema, schema);
           RelNode node;
@@ -584,7 +687,7 @@ class RelWriterTest {
         Frameworks.withPlanner((cluster, relOptSchema, rootSchema) -> {
           SchemaPlus schema =
               rootSchema.add("hr",
-                  new ReflectiveSchema(new JdbcTest.HrSchema()));
+                  new ReflectiveSchema(new HrSchema()));
           final RelJsonReader reader =
               new RelJsonReader(cluster, relOptSchema, schema);
           RelNode node;
@@ -690,6 +793,32 @@ class RelWriterTest {
       break;
     }
     assertThat(s, isLinux(expected));
+  }
+
+  @Test void testDeserializeInvalidOperatorName() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder builder = RelBuilder.create(config);
+    final RelNode rel = builder
+        .scan("EMP")
+        .project(
+            builder.field("JOB"),
+            builder.field("SAL"))
+        .aggregate(
+            builder.groupKey("JOB"),
+            builder.max("max_sal", builder.field("SAL")),
+            builder.min("min_sal", builder.field("SAL")))
+        .project(
+            builder.field("max_sal"),
+            builder.field("min_sal"))
+        .build();
+    final RelJsonWriter jsonWriter = new RelJsonWriter();
+    rel.explain(jsonWriter);
+    // mock a non exist SqlOperator
+    String relJson = jsonWriter.asString().replace("\"name\": \"MAX\"", "\"name\": \"MAXS\"");
+    assertThrows(RuntimeException.class,
+        () -> deserializeAndDumpToTextFormat(getSchema(rel), relJson),
+        "org.apache.calcite.runtime.CalciteException: "
+            + "No operator for 'MAXS' with kind: 'MAX', syntax: 'FUNCTION' during JSON deserialization");
   }
 
   @Test void testAggregateWithoutAlias() {
@@ -921,6 +1050,24 @@ class RelWriterTest {
     assertThat(s, isLinux(expected));
   }
 
+  @Test void testMapType() {
+    final FrameworkConfig config = RelBuilderTest.config().build();
+    final RelBuilder builder = RelBuilder.create(config);
+    final RelNode rel = builder
+        .scan("EMP")
+        .project(
+            builder.call(new MockSqlOperatorTable.MapFunction(),
+                builder.literal("key"), builder.literal("value")))
+        .build();
+    final String relJson = RelOptUtil.dumpPlan("", rel,
+        SqlExplainFormat.JSON, SqlExplainLevel.EXPPLAN_ATTRIBUTES);
+    final String s = deserializeAndDumpToTextFormat(getSchema(rel), relJson);
+    final String expected = ""
+        + "LogicalProject($f0=[MAP('key', 'value')])\n"
+        + "  LogicalTableScan(table=[[scott, EMP]])\n";
+    assertThat(s, isLinux(expected));
+  }
+
   /** Returns the schema of a {@link org.apache.calcite.rel.core.TableScan}
    * in this plan, or null if there are no scans. */
   private RelOptSchema getSchema(RelNode rel) {
@@ -955,6 +1102,18 @@ class RelWriterTest {
               SqlExplainLevel.EXPPLAN_ATTRIBUTES);
         });
     return s;
+  }
+
+  private String deserializeAndDump(RelOptCluster cluster, RelOptSchema schema, String relJson,
+      SqlExplainFormat format) {
+    final RelJsonReader reader = new RelJsonReader(cluster, schema, null);
+    RelNode node;
+    try {
+      node = reader.read(relJson);
+    } catch (IOException e) {
+      throw TestUtil.rethrow(e);
+    }
+    return RelOptUtil.dumpPlan("", node, format, SqlExplainLevel.EXPPLAN_ATTRIBUTES);
   }
 
   /**

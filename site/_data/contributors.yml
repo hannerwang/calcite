@@ -68,7 +68,8 @@
 - name: Feng Zhu
   apacheId: fengzhu
   githubId: DonnyZone
-  org: Tencent
+  pronouns: he/him
+  org: eBay
   role: Committer
 - name: Forward Xu
   apacheId: forwardxu
@@ -143,7 +144,8 @@
 - name: Julian Hyde
   apacheId: jhyde
   githubId: julianhyde
-  org: Looker
+  pronouns: he/him
+  org: Google
   role: PMC
   homepage: http://people.apache.org/~jhyde
 - name: Kevin Liew
@@ -174,6 +176,7 @@
 - name: Michael Mior
   apacheId: mmior
   githubId: michaelmior
+  pronouns: he/him
   org: Rochester Institute of Technology
   role: PMC
   homepage: https://michael.mior.ca/
@@ -232,6 +235,7 @@
 - name: Stamatis Zampetakis
   apacheId: zabetak
   githubId: zabetak
+  pronouns: he/him
   org: Cloudera
   role: PMC
   homepage: https://people.apache.org/~zabetak/
@@ -256,6 +260,11 @@
   githubId: vlsi
   org: NetCracker
   role: PMC
+- name: Vladimir Ozerov
+  apacheId: vozerov
+  githubId: devozerov
+  org: Querify Labs
+  role: Committer
 - name: Volodymyr Vysotskyi
   apacheId: volodymyr
   githubId: vvysotskyi
@@ -264,6 +273,17 @@
 - name: Wang Yanlin
   apacheId: yanlin
   githubId: yanlin-Lynn
+  org: Ant Financial
+  role: Committer
+- name: Xiong Duan
+  apacheId: xiong
+  githubId: NobiGo
+  pronouns: he/him
+  org: Hikvision
+  role: Committer
+- name: Zhaohui Xu
+  apacheId: zhaohui
+  githubId: xy2953396112
   org: Ant Financial
   role: Committer
 - name: Zhen Wang

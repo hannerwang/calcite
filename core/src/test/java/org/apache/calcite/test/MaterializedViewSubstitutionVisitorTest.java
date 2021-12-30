@@ -1041,6 +1041,178 @@ public class MaterializedViewSubstitutionVisitorTest extends AbstractMaterialize
         + "where \"name\" = 'hello'";
     sql(mv, query).ok();
   }
+  /** Unit test for FilterBottomJoin can be pulled up. */
+  @Test void testLeftFilterOnLeftJoinToJoinOk1() {
+    String mv = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\") \"t1\"\n"
+        + "left join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    String query = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\" where \"empid\" > 10) \"t1\"\n"
+        + "left join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    sql(mv, query).ok();
+  }
+
+  @Test void testLeftFilterOnLeftJoinToJoinOk2() {
+    String mv = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\" where \"empid\" > 10) \"t1\"\n"
+        + "left join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    String query = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\" where \"empid\" > 30) \"t1\"\n"
+        + "left join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    sql(mv, query).ok();
+  }
+
+  @Test void testRightFilterOnLeftJoinToJoinFail() {
+    String mv = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\") \"t1\"\n"
+        + "left join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    String query = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\") \"t1\"\n"
+        + "left join (select \"deptno\", \"name\" from \"depts\" where \"name\" is not null) \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    sql(mv, query).noMat();
+  }
+
+  @Test void testRightFilterOnRightJoinToJoinOk() {
+    String mv = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\") \"t1\"\n"
+        + "right join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    String query = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\") \"t1\"\n"
+        + "right join (select \"deptno\", \"name\" from \"depts\" where \"name\" is not null) \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    sql(mv, query).ok();
+  }
+
+  @Test void testLeftFilterOnRightJoinToJoinFail() {
+    String mv = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\") \"t1\"\n"
+        + "right join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    String query = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\" where \"empid\" > 30) \"t1\"\n"
+        + "right join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    sql(mv, query).noMat();
+  }
+
+  @Test void testLeftFilterOnFullJoinToJoinFail() {
+    String mv = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\") \"t1\"\n"
+        + "full join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    String query = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\" where \"empid\" > 30) \"t1\"\n"
+        + "full join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    sql(mv, query).noMat();
+  }
+
+  @Test void testRightFilterOnFullJoinToJoinFail() {
+    String mv = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\") \"t1\"\n"
+        + "full join (select \"deptno\", \"name\" from \"depts\") \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    String query = "select * from \n"
+        + "(select \"empid\", \"deptno\", \"name\" from \"emps\") \"t1\"\n"
+        + "full join (select \"deptno\", \"name\" from \"depts\" where \"name\" is not null) \"t2\"\n"
+        + "on \"t1\".\"deptno\" = \"t2\".\"deptno\"";
+    sql(mv, query).noMat();
+  }
+
+  @Test void testMoreSameExprInMv() {
+    final String mv = ""
+        + "select \"empid\", \"deptno\", sum(\"empid\") as s1, sum(\"empid\") as s2, count(*) as c\n"
+        + "from \"emps\" group by \"empid\", \"deptno\"";
+    final String query = ""
+        +  "select sum(\"empid\"), count(*) from \"emps\" group by \"empid\", \"deptno\"";
+    sql(mv, query).ok();
+  }
+
+  /**
+   * It's match, distinct agg-call could be expressed by mv's grouping.
+   */
+  @Test void testAggDistinctInMvGrouping() {
+    final String mv = ""
+        + "select \"deptno\", \"name\""
+        + "from \"emps\" group by \"deptno\", \"name\"";
+    final String query = ""
+        + "select \"deptno\", \"name\", count(distinct \"name\")"
+        + "from \"emps\" group by \"deptno\", \"name\"";
+    sql(mv, query).ok();
+  }
+
+  /**
+   * It's match, `Optionality.IGNORED` agg-call could be expressed by mv's grouping.
+   */
+  @Test void testAggOptionalityInMvGrouping() {
+    final String mv = ""
+        + "select \"deptno\", \"salary\""
+        + "from \"emps\" group by \"deptno\", \"salary\"";
+    final String query = ""
+        + "select \"deptno\", \"salary\", max(\"salary\")"
+        + "from \"emps\" group by \"deptno\", \"salary\"";
+    sql(mv, query).ok();
+  }
+
+  /**
+   * It's not match, normal agg-call could be expressed by mv's grouping.
+   * Such as: sum, count
+   */
+  @Test void testAggNormalInMvGrouping() {
+    final String mv = ""
+        + "select \"deptno\", \"salary\""
+        + "from \"emps\" group by \"deptno\", \"salary\"";
+    final String query = ""
+        + "select \"deptno\", sum(\"salary\")"
+        + "from \"emps\" group by \"deptno\"";
+    sql(mv, query).noMat();
+  }
+
+  /**
+   * It's not match, which is count(*) with same grouping.
+   */
+  @Test void testGenerateQueryAggCallByMvGroupingForEmptyArg1() {
+    final String mv = ""
+        + "select \"deptno\""
+        + "from \"emps\" group by \"deptno\"";
+    final String query = ""
+        + "select \"deptno\", count(*)"
+        + "from \"emps\" group by \"deptno\"";
+    sql(mv, query).noMat();
+  }
+
+  /**
+   * It's not match, which is count(*) with rollup grouping.
+   */
+  @Test void testGenerateQueryAggCallByMvGroupingForEmptyArg2() {
+    final String mv = ""
+        + "select \"deptno\", \"commission\", \"salary\""
+        + "from \"emps\" group by \"deptno\", \"commission\", \"salary\"";
+    final String query = ""
+        + "select \"deptno\", \"commission\", count(*)"
+        + "from \"emps\" group by \"deptno\", \"commission\"";
+    sql(mv, query).noMat();
+  }
+
+  /**
+   * It's match, when query's agg-calls could be both rollup and expressed by mv's grouping.
+   */
+  @Test void testAggCallBothGenByMvGroupingAndRollupOk() {
+    final String mv = ""
+        + "select \"name\", \"deptno\", \"empid\", min(\"commission\")"
+        + "from \"emps\" group by \"name\", \"deptno\", \"empid\"";
+    final String query = ""
+        + "select \"name\", max(\"deptno\"), count(distinct \"empid\"), min(\"commission\")"
+        + "from \"emps\" group by \"name\"";
+    sql(mv, query).ok();
+  }
 
   /** Unit test for logic functions
    * {@link org.apache.calcite.plan.SubstitutionVisitor#mayBeSatisfiable} and
@@ -1566,6 +1738,65 @@ public class MaterializedViewSubstitutionVisitorTest extends AbstractMaterialize
     sql(mv, query).ok();
   }
 
+  @Test void testRexPredicate() {
+    final String mv = ""
+        + "select \"name\"\n"
+        + "from \"emps\"\n"
+        + "where \"deptno\" > 100 and \"deptno\" > 50\n"
+        + "group by \"name\"";
+    final String query = ""
+        + "select \"name\"\n"
+        + "from \"emps\"\n"
+        + "where \"deptno\" > 100"
+        + "group by \"name\"";
+    sql(mv, query).withChecker(
+        resultContains(""
+            + "EnumerableTableScan(table=[[hr, MV0]])")).ok();
+  }
+
+  @Test void testRexPredicate1() {
+    final String query = ""
+        + "select \"name\"\n"
+        + "from \"emps\"\n"
+        + "where \"deptno\" > 100 and \"deptno\" > 50\n"
+        + "group by \"name\"";
+    final String mv = ""
+        + "select \"name\"\n"
+        + "from \"emps\"\n"
+        + "where \"deptno\" > 100"
+        + "group by \"name\"";
+    sql(mv, query).withChecker(
+        resultContains(""
+            + "EnumerableTableScan(table=[[hr, MV0]])")).ok();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-4779">[CALCITE-4779]
+   * GroupByList contains constant literal, materialized view recognition failed</a>. */
+  @Test void testGroupByListContainsConstantLiteral() {
+    // Aggregate operator grouping set contains a literal and count(distinct col) function.
+    final String mv1 = ""
+        + "select \"deptno\", \"empid\"\n"
+        + "from \"emps\"\n"
+        + "group by \"deptno\", \"empid\"";
+    final String query1 = ""
+        + "select 'a', \"deptno\", count(distinct \"empid\")\n"
+        + "from \"emps\"\n"
+        + "group by 'a', \"deptno\"";
+    sql(mv1, query1).ok();
+
+    // Aggregate operator grouping set contains a literal and sum(col) function.
+    final String mv2 = ""
+        + "select \"deptno\", \"empid\", sum(\"empid\")\n"
+        + "from \"emps\"\n"
+        + "group by \"deptno\", \"empid\"";
+    final String query2 = ""
+        + "select 'a', \"deptno\", sum(\"empid\")\n"
+        + "from \"emps\"\n"
+        + "group by 'a', \"deptno\"";
+    sql(mv2, query2).ok();
+  }
+
   final JavaTypeFactoryImpl typeFactory =
       new JavaTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
   private final RexBuilder rexBuilder = new RexBuilder(typeFactory);
@@ -1594,6 +1825,7 @@ public class MaterializedViewSubstitutionVisitorTest extends AbstractMaterialize
             .addRuleInstance(CoreRules.PROJECT_REMOVE)
             .addRuleInstance(CoreRules.PROJECT_JOIN_TRANSPOSE)
             .addRuleInstance(CoreRules.PROJECT_SET_OP_TRANSPOSE)
+            .addRuleInstance(CoreRules.AGGREGATE_PROJECT_PULL_UP_CONSTANTS)
             .addRuleInstance(CoreRules.FILTER_TO_CALC)
             .addRuleInstance(CoreRules.PROJECT_TO_CALC)
             .addRuleInstance(CoreRules.FILTER_CALC_MERGE)

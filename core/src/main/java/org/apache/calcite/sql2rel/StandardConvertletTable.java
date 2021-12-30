@@ -308,12 +308,20 @@ public class StandardConvertletTable extends ReflectiveConvertletTable {
         cx.convertExpression(call.getOperandList().get(1));
     final RelDataType type =
         cx.getValidator().getValidatedNodeType(call);
+    // Preserve Operand Nullability
     return rexBuilder.makeCall(type, SqlStdOperatorTable.CASE,
         ImmutableList.of(
             rexBuilder.makeCall(SqlStdOperatorTable.IS_NOT_NULL,
                 operand0),
-            rexBuilder.makeCast(type, operand0),
-            rexBuilder.makeCast(type, operand1)));
+            rexBuilder.makeCast(
+                cx.getTypeFactory()
+                    .createTypeWithNullability(type, operand0.getType().isNullable()),
+                operand0),
+            rexBuilder.makeCast(
+                cx.getTypeFactory()
+                    .createTypeWithNullability(type, operand1.getType().isNullable()),
+                operand1)
+        ));
   }
 
   /** Converts a call to the DECODE function. */
@@ -1152,7 +1160,7 @@ public class StandardConvertletTable extends ReflectiveConvertletTable {
 
   private RexNode toRex(SqlRexContext cx, SqlBasicCall call, SqlFunction f) {
     final SqlCall call2 =
-        new SqlBasicCall(f, call.operands, call.getParserPosition());
+        new SqlBasicCall(f, call.getOperandList(), call.getParserPosition());
     final SqlRexConvertlet convertlet = requireNonNull(get(call2));
     return convertlet.convertCall(cx, call2);
   }

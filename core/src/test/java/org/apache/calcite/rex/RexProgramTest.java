@@ -1710,6 +1710,18 @@ class RexProgramTest extends RexProgramTestBase {
         .expandedSearch(expanded);
   }
 
+  @Test void testSimplifyAndIsNotNullWithEquality() {
+    // "AND(IS NOT NULL(x), =(x, y)) => AND(IS NOT NULL(x), =(x, y)) (unknownAsFalse=false),
+    // "=(x, y)" (unknownAsFalse=true)
+    checkSimplify2(and(isNotNull(vInt(0)), eq(vInt(0), vInt(1))),
+        "AND(IS NOT NULL(?0.int0), =(?0.int0, ?0.int1))",
+        "=(?0.int0, ?0.int1)");
+
+    // "AND(IS NOT NULL(x), =(x, y)) => "=(x, y)"
+    checkSimplify(and(isNotNull(vIntNotNull(0)), eq(vIntNotNull(0), vInt(1))),
+        "=(?0.notNullInt0, ?0.int1)");
+  }
+
   @Test void testSimplifyAndIsNull() {
     final RexNode aRef = input(tInt(true), 0);
     final RexNode bRef = input(tInt(true), 1);
@@ -2073,7 +2085,7 @@ class RexProgramTest extends RexProgramTestBase {
     RexNode caseNode = case_(
         gt(div(vIntNotNull(), literal(1)), literal(1)), falseLiteral,
         trueLiteral);
-    checkSimplify(caseNode, "<=(/(?0.notNullInt0, 1), 1)");
+    checkSimplify(caseNode, "<=(?0.notNullInt0, 1)");
   }
 
   @Test void testPushNotIntoCase() {
@@ -2859,20 +2871,26 @@ class RexProgramTest extends RexProgramTestBase {
         is(2), is("Sarg[(-\u221E..1), (1..+\u221E); NULL AS TRUE]"));
     checkSarg("complexity of 'x < 10 or x >= 20'",
         Sarg.of(RexUnknownAs.UNKNOWN,
-            ImmutableRangeSet.copyOf(
-                ImmutableList.of(Range.lessThan(10), Range.atLeast(20)))),
+            ImmutableRangeSet.<Integer>builder()
+                .add(Range.lessThan(10))
+                .add(Range.atLeast(20))
+                .build()),
         is(2), is("Sarg[(-\u221E..10), [20..+\u221E)]"));
     checkSarg("complexity of 'x in (2, 4, 6) or x > 20'",
         Sarg.of(RexUnknownAs.UNKNOWN,
-            ImmutableRangeSet.copyOf(
-                Arrays.asList(Range.singleton(2), Range.singleton(4),
-                    Range.singleton(6), Range.greaterThan(20)))),
+            ImmutableRangeSet.<Integer>builder()
+                .add(Range.singleton(2))
+                .add(Range.singleton(4))
+                .add(Range.singleton(6))
+                .add(Range.greaterThan(20))
+                .build()),
         is(4), is("Sarg[2, 4, 6, (20..+\u221E)]"));
     checkSarg("complexity of 'x between 3 and 8 or x between 10 and 20'",
         Sarg.of(RexUnknownAs.UNKNOWN,
-            ImmutableRangeSet.copyOf(
-                Arrays.asList(Range.closed(3, 8),
-                    Range.closed(10, 20)))),
+            ImmutableRangeSet.<Integer>builder()
+                .add(Range.closed(3, 8))
+                .add(Range.closed(10, 20))
+                .build()),
         is(2), is("Sarg[[3..8], [10..20]]"));
   }
 
@@ -3223,5 +3241,34 @@ class RexProgramTest extends RexProgramTestBase {
 
   @Test void testSimplifyVarbinary() {
     checkSimplifyUnchanged(cast(cast(vInt(), tVarchar(true, 100)), tVarbinary(true)));
+  }
+
+  @Test void testSimplifySimpleArithmetic() {
+    RexNode a = vIntNotNull(1);
+    RexNode zero = literal(0);
+    RexNode one = literal(1);
+
+    RexNode b = vDecimalNotNull(2);
+    RexNode half = literal(new BigDecimal(0.5), b.getType());
+
+    checkSimplify(add(a, zero), "?0.notNullInt1");
+    checkSimplify(add(zero, a), "?0.notNullInt1");
+    checkSimplify(add(a, nullInt), "null:INTEGER");
+    checkSimplify(add(nullInt, a), "null:INTEGER");
+
+    checkSimplify(sub(a, zero), "?0.notNullInt1");
+    checkSimplify(sub(a, nullInt), "null:INTEGER");
+
+    checkSimplify(mul(a, one), "?0.notNullInt1");
+    checkSimplify(mul(one, a), "?0.notNullInt1");
+    checkSimplify(mul(a, nullInt), "null:INTEGER");
+    checkSimplify(mul(nullInt, a), "null:INTEGER");
+
+    checkSimplify(div(a, one), "?0.notNullInt1");
+    checkSimplify(div(a, nullInt), "null:INTEGER");
+
+    checkSimplifyUnchanged(add(b, half));
+
+    checkSimplify(add(zero, sub(nullInt, nullInt)), "null:INTEGER");
   }
 }
