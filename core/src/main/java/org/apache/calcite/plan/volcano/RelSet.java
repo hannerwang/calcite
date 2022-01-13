@@ -258,6 +258,14 @@ class RelSet {
     }
   }
 
+  /**
+   * get or create the subset of the specific traits
+   *
+   * @param cluster
+   * @param traits
+   * @param required rel is an enforcer?
+   * @return
+   */
   RelSubset getOrCreateSubset(
       RelOptCluster cluster, RelTraitSet traits, boolean required) {
     boolean needsConverter = false;

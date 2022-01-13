@@ -611,6 +611,12 @@ public class VolcanoPlanner extends AbstractRelOptPlanner {
     return registerImpl(rel, set);
   }
 
+  /**
+   * What's been registered? What's the purpose?
+   * @param rel      Relational expression to register
+   * @param equivRel Relational expression it is equivalent to (may be null)
+   * @return
+   */
   @Override public RelSubset ensureRegistered(RelNode rel, @Nullable RelNode equivRel) {
     RelSubset result;
     final RelSubset subset = getSubset(rel);
