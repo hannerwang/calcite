@@ -11539,6 +11539,42 @@ LogicalProject(DEPTNO=[$0])
 ]]>
     </Resource>
   </TestCase>
+  <TestCase name="testSetOpProjectFilterMergeRule">
+    <Resource name="sql">
+      <![CDATA[SELECT ename, job
+FROM emp WHERE deptno = 1
+UNION
+SELECT ename, job
+FROM emp WHERE deptno = 2
+UNION
+SELECT ename, job
+FROM emp WHERE deptno = 3]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalUnion(all=[false])
+  LogicalUnion(all=[false])
+    LogicalProject(ENAME=[$1], JOB=[$2])
+      LogicalFilter(condition=[=($7, 1)])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+    LogicalProject(ENAME=[$1], JOB=[$2])
+      LogicalFilter(condition=[=($7, 2)])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+  LogicalProject(ENAME=[$1], JOB=[$2])
+    LogicalFilter(condition=[=($7, 3)])
+      LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+LogicalProject(DEPTNO=[$0], EXPR$1=[$1], EXPR$2=[CAST(/($2, $3)):INTEGER NOT NULL])
+  LogicalAggregate(group=[{0}], agg#0=[$SUM0($2)], agg#1=[$SUM0($3)], agg#2=[COUNT()])
+    LogicalAggregate(group=[{0, 2}], agg#0=[MIN($1)], agg#1=[MIN($3)])
+      LogicalProject(DEPTNO=[$7], SAL=[$5], JOB=[$2], COMM=[$6])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
   <TestCase name="testSimplifyFilter">
     <Resource name="sql">
       <![CDATA[select * from (select * from sales.emp where deptno > 10)

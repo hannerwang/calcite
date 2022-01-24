@@ -7109,4 +7109,22 @@ class RelOptRulesTest extends RelOptTestBase {
         .withRule(CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN)
         .check();
   }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-4990">[CALCITE-4990]
+   * Add SetOpFilterMergeRule for Converting UNION with same inputs but different filters
+   * to single input with OR Filter</a>. */
+  @Test void testSetOpProjectFilterMergeRule() {
+    final String sql = "SELECT ename, job\n"
+        + "FROM emp WHERE deptno = 1\n"
+        + "UNION\n"
+        + "SELECT ename, job\n"
+        + "FROM emp WHERE deptno = 2\n"
+        + "UNION\n"
+        + "SELECT ename, job\n"
+        + "FROM emp WHERE deptno = 3";
+    sql(sql)
+        .withRule(CoreRules.SET_OP_PROJECT_FILTER_MERGE_RULE)
+        .check();
+  }
 }
