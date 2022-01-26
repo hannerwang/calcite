@@ -7109,4 +7109,49 @@ class RelOptRulesTest extends RelOptTestBase {
         .withRule(CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN)
         .check();
   }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-4990">[CALCITE-4990]
+   * Add SetOpProjectFilterMergeRule for Converting UNION with same inputs but different filters
+   * to single input with OR Filter</a>. */
+  @Test void testSetOpProjectFilterMergeRule() {
+    final String sql = "SELECT ename, job\n"
+        + "FROM emp WHERE deptno = 50 AND sal > 60\n"
+        + "UNION ALL\n"
+        + "SELECT ename, job\n"
+        + "FROM emp WHERE deptno > 100 AND sal > 60\n"
+        + "UNION ALL\n"
+        + "SELECT ename, job\n"
+        + "FROM emp WHERE deptno < 10 AND sal > 60\n"
+        + "UNION ALL\n"
+        + "SELECT ename, job\n"
+        + "FROM emp WHERE deptno in (60, 62, 66) AND sal > 60\n"
+        + "UNION ALL\n"
+        + "SELECT ename, job\n"
+        + "FROM emp WHERE deptno BETWEEN 70 AND 80 AND sal > 60";
+    sql(sql)
+        .withRule(CoreRules.SET_OP_PROJECT_FILTER_MERGE_RULE)
+        .check();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-4990">[CALCITE-4990]
+   * Add SetOpProjectFilterMergeRule for Converting UNION with same inputs but different filters
+   * to single input with OR Filter</a>. */
+  @Test void testSetOpProjectFilterMergeRule2() {
+    final String sql = "SELECT ename, dept.name\n"
+        + "FROM emp join dept using (deptno)\n"
+        + "WHERE emp.deptno <> 50 AND emp.deptno <> 100 AND 60 <= sal\n"
+        + "UNION ALL\n"
+        + "SELECT ename, dept.name\n"
+        + "FROM emp join dept using (deptno)\n"
+        + "WHERE emp.deptno = 100 AND 70 >= sal\n"
+        + "UNION ALL\n"
+        + "SELECT ename, dept.name\n"
+        + "FROM emp join dept using (deptno)\n"
+        + "WHERE emp.deptno = 50 OR sal = 50";
+    sql(sql)
+        .withRule(CoreRules.SET_OP_PROJECT_FILTER_MERGE_RULE)
+        .check();
+  }
 }

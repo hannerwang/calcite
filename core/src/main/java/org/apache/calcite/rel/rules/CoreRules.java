@@ -766,4 +766,10 @@ public class CoreRules {
       WINDOW_REDUCE_EXPRESSIONS =
       ReduceExpressionsRule.WindowReduceExpressionsRule.WindowReduceExpressionsRuleConfig
           .DEFAULT.toRule();
+
+  /** Rule that merges a {@link Union} ALL on top of {@link Project}s
+   * on top of {@link Filter}s, resulting in a {@link Project}
+   * on top of a {@link Filter} with an OR condition. */
+  public static final SetOpProjectFilterMergeRule SET_OP_PROJECT_FILTER_MERGE_RULE =
+      SetOpProjectFilterMergeRule.Config.DEFAULT.toRule();
 }

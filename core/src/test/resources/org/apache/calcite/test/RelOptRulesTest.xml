@@ -11539,6 +11539,105 @@ LogicalProject(DEPTNO=[$0])
 ]]>
     </Resource>
   </TestCase>
+  <TestCase name="testSetOpProjectFilterMergeRule">
+    <Resource name="sql">
+      <![CDATA[SELECT ename, job
+FROM emp WHERE deptno = 50 AND sal > 60
+UNION ALL
+SELECT ename, job
+FROM emp WHERE deptno > 100 AND sal > 60
+UNION ALL
+SELECT ename, job
+FROM emp WHERE deptno < 10 AND sal > 60
+UNION ALL
+SELECT ename, job
+FROM emp WHERE deptno in (60, 62, 66) AND sal > 60
+UNION ALL
+SELECT ename, job
+FROM emp WHERE deptno BETWEEN 70 AND 80 AND sal > 60]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalUnion(all=[true])
+  LogicalUnion(all=[true])
+    LogicalUnion(all=[true])
+      LogicalUnion(all=[true])
+        LogicalProject(ENAME=[$1], JOB=[$2])
+          LogicalFilter(condition=[AND(=($7, 50), >($5, 60))])
+            LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+        LogicalProject(ENAME=[$1], JOB=[$2])
+          LogicalFilter(condition=[AND(>($7, 100), >($5, 60))])
+            LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+      LogicalProject(ENAME=[$1], JOB=[$2])
+        LogicalFilter(condition=[AND(<($7, 10), >($5, 60))])
+          LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+    LogicalProject(ENAME=[$1], JOB=[$2])
+      LogicalFilter(condition=[AND(OR(=($7, 60), =($7, 62), =($7, 66)), >($5, 60))])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+  LogicalProject(ENAME=[$1], JOB=[$2])
+    LogicalFilter(condition=[AND(>=($7, 70), <=($7, 80), >($5, 60))])
+      LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+LogicalProject(ENAME=[$1], JOB=[$2])
+  LogicalFilter(condition=[AND(>($5, 60), SEARCH($7, Sarg[(-∞..10), 50, 60, 62, 66, [70..80], (100..+∞)]))])
+    LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testSetOpProjectFilterMergeRule2">
+    <Resource name="sql">
+      <![CDATA[SELECT ename, dept.name
+FROM emp join dept using (deptno)
+WHERE emp.deptno <> 50 AND emp.deptno <> 100 AND 60 <= sal
+UNION ALL
+SELECT ename, dept.name
+FROM emp join dept using (deptno)
+WHERE emp.deptno = 100 AND 70 >= sal
+UNION ALL
+SELECT ename, dept.name
+FROM emp join dept using (deptno)
+WHERE emp.deptno = 50 OR sal = 50]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalUnion(all=[true])
+  LogicalUnion(all=[true])
+    LogicalProject(ENAME=[$1], NAME=[$10])
+      LogicalFilter(condition=[AND(<>($7, 50), <>($7, 100), <=(60, $5))])
+        LogicalJoin(condition=[=($7, $9)], joinType=[inner])
+          LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+          LogicalTableScan(table=[[CATALOG, SALES, DEPT]])
+    LogicalProject(ENAME=[$1], NAME=[$10])
+      LogicalFilter(condition=[AND(=($7, 100), >=(70, $5))])
+        LogicalJoin(condition=[=($7, $9)], joinType=[inner])
+          LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+          LogicalTableScan(table=[[CATALOG, SALES, DEPT]])
+  LogicalProject(ENAME=[$1], NAME=[$10])
+    LogicalFilter(condition=[OR(=($7, 50), =($5, 50))])
+      LogicalJoin(condition=[=($7, $9)], joinType=[inner])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+        LogicalTableScan(table=[[CATALOG, SALES, DEPT]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+LogicalUnion(all=[true])
+  LogicalProject(ENAME=[$1], NAME=[$10])
+    LogicalFilter(condition=[OR(AND(SEARCH($7, Sarg[(-∞..50), (50..100), (100..+∞)]), >=($5, 60)), AND(=($7, 100), >=(70, $5)))])
+      LogicalJoin(condition=[=($7, $9)], joinType=[inner])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+        LogicalTableScan(table=[[CATALOG, SALES, DEPT]])
+  LogicalProject(ENAME=[$1], NAME=[$10])
+    LogicalFilter(condition=[OR(=($7, 50), =($5, 50))])
+      LogicalJoin(condition=[=($7, $9)], joinType=[inner])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+        LogicalTableScan(table=[[CATALOG, SALES, DEPT]])
+]]>
+    </Resource>
+  </TestCase>
   <TestCase name="testSimplifyFilter">
     <Resource name="sql">
       <![CDATA[select * from (select * from sales.emp where deptno > 10)
