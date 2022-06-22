@@ -315,6 +315,20 @@ from dept_nested_expanded as d,
  UNNEST(d.employees) as t(employee)]]>
     </Resource>
   </TestCase>
+  <TestCase name="testAliasWithinGroupingSets">
+    <Resource name="sql">
+      <![CDATA[SELECT empno / 2 AS x
+FROM emp
+GROUP BY ROLLUP(x)]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalAggregate(group=[{0}], groups=[[{0}, {}]])
+  LogicalProject(X=[/($0, 2)])
+    LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
   <TestCase name="testAllValueList">
     <Resource name="sql">
       <![CDATA[select empno from emp where deptno > all (10, 20)]]>

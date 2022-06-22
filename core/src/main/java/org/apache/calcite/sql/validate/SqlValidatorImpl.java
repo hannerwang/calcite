@@ -6632,7 +6632,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
           final SqlIdentifier fqId = getScope().fullyQualify(sid).identifier;
           expr = expandDynamicStar(sid, fqId);
         }
-        return expr;
+        return expr.clone(expr.getParserPosition());
       }
       if (id.isSimple()) {
         final SelectScope scope = validator.getRawSelectScope(select);

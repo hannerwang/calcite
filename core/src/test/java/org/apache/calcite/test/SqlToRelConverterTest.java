@@ -4432,4 +4432,18 @@ class SqlToRelConverterTest extends SqlToRelTestBase {
         .withTrim(false)
         .ok();
   }
+
+  /**
+   * Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-5045">[CALCITE-5045]
+   * Alias within GroupingSets throws type mis-match exception</a>.
+   */
+  @Test void testAliasWithinGroupingSets() {
+    final String sql = "SELECT empno / 2 AS x\n"
+        + "FROM emp\n"
+        + "GROUP BY ROLLUP(x)";
+    sql(sql)
+        .withConformance(SqlConformanceEnum.LENIENT)
+        .ok();
+  }
 }
