@@ -690,7 +690,7 @@ public abstract class MaterializedViewAggregateRule<C extends MaterializedViewAg
     }
     return relBuilder
         .project(rewrittenExprs)
-        .convert(topRowType, false)
+        .convert(topRowType, true)
         .build();
   }
 
