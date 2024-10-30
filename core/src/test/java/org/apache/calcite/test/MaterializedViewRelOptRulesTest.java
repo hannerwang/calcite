@@ -1134,7 +1134,7 @@ class MaterializedViewRelOptRulesTest {
             + "from \"emps\"\n"
             + "join \"depts\" on \"depts\".\"deptno\" = \"empid\" group by \"empid\", \"depts\".\"deptno\"")
         .checkingThatResultContains(""
-            + "EnumerableCalc(expr#0=[{inputs}], empid=[$t0], empid0=[$t0])\n"
+            + "EnumerableCalc(expr#0=[{inputs}], empid=[$t0], deptno=[$t0])\n"
             + "  EnumerableAggregate(group=[{1}])\n"
             + "    EnumerableHashJoin(condition=[=($1, $3)], joinType=[inner])\n"
             + "      EnumerableTableScan(table=[[hr, MV0]])\n"
@@ -1238,6 +1238,14 @@ class MaterializedViewRelOptRulesTest {
         .checkingThatResultContains(""
             + "EnumerableCalc(expr#0..2=[{inputs}], expr#3=[=($t0, $t1)], expr#4=[CAST($t2):INTEGER NOT NULL], expr#5=[1], expr#6=[=($t4, $t5)], expr#7=[AND($t3, $t6)], proj#0..1=[{exprs}], $condition=[$t7])\n"
             + "  EnumerableTableScan(table=[[hr, nullables]])")
+        .ok();
+  }
+
+  @Test void testQueryAliasKeptWhenMaterializedViewSubstitutes() {
+    sql("select \"empid\", \"deptno\" as dept_no, sum(\"empid\") as s\n"
+            + "from \"emps\" group by \"empid\", \"deptno\"",
+        "select\"deptno\" as dno, sum(\"empid\") as id_sum\n"
+            + "from \"emps\" group by \"deptno\"")
         .ok();
   }
 }
