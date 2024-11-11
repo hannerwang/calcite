@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.test;
 
+import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
@@ -54,6 +55,10 @@ public class MaterializedViewFixture {
 
   public void ok() {
     tester.checkMaterialize(this);
+  }
+
+  public void okForDialect(SqlDialect sqlDialect, String expectedSql) {
+    tester.checkLogicalMaterialize(this, sqlDialect, expectedSql);
   }
 
   public void noMat() {

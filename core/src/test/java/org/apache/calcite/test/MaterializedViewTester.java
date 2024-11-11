@@ -29,13 +29,17 @@ import org.apache.calcite.prepare.CalciteCatalogReader;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.RelFactories;
 import org.apache.calcite.rel.logical.LogicalTableScan;
+import org.apache.calcite.rel.rel2sql.RelToSqlConverter;
+import org.apache.calcite.rel.rel2sql.SqlImplementor.Result;
 import org.apache.calcite.rex.RexExecutorImpl;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.schema.Table;
+import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.calcite.sql.util.SqlString;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
@@ -51,6 +55,7 @@ import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * Abstract base class for testing materialized views.
@@ -65,7 +70,7 @@ public abstract class MaterializedViewTester {
   /** Checks that a given query can use a materialized view with a given
    * definition. */
   void checkMaterialize(MaterializedViewFixture f) {
-    final TestConfig testConfig = build(f);
+    final TestConfig testConfig = build(f, false);
     final Predicate<String> checker =
         Util.first(f.checker,
             s -> MaterializedViewFixture.resultContains(s,
@@ -84,10 +89,42 @@ public abstract class MaterializedViewTester {
     }
   }
 
+  void checkLogicalMaterialize(MaterializedViewFixture f, SqlDialect sqlDialect, String expectedSql) {
+    final TestConfig testConfig = build(f, true);
+    final List<RelNode> substitutes =
+        optimize(testConfig.queryRel, testConfig.materializationList);
+    if (substitutes.isEmpty()) {
+      throw new AssertionError("Materialized view failed to be substituted");
+    }
+    boolean found = false;
+    for (RelNode substitute : substitutes) {
+      String actualSql = getLogicalRelSql(substitute, sqlDialect);
+      if (actualSql.equals(expectedSql)) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      String optimizedSqls = substitutes.stream().map(s -> getLogicalRelSql(s, sqlDialect))
+          .collect(Collectors.joining("\n"));
+
+      throw new AssertionError("The expected sql is not found, "
+          + "possible sqls are " + optimizedSqls);
+    }
+  }
+
+  private String getLogicalRelSql(RelNode relNode, SqlDialect sqlDialect) {
+    RelToSqlConverter relToSqlConverter = new RelToSqlConverter(sqlDialect);
+    Result result = relToSqlConverter.visitRoot(relNode);
+    SqlNode statement = result.asStatement();
+    SqlString sqlString = statement.toSqlString(sqlDialect);
+    return sqlString.getSql();
+  }
+
   /** Checks that a given query cannot use a materialized view with a given
    * definition. */
   void checkNoMaterialize(MaterializedViewFixture f) {
-    final TestConfig testConfig = build(f);
+    final TestConfig testConfig = build(f, false);
     final List<RelNode> results =
         optimize(testConfig.queryRel, testConfig.materializationList);
     if (results.isEmpty()
@@ -103,7 +140,7 @@ public abstract class MaterializedViewTester {
     throw new AssertionError(errMsgBuilder.toString());
   }
 
-  private TestConfig build(MaterializedViewFixture f) {
+  private TestConfig build(MaterializedViewFixture f, boolean logicalRel) {
     return Frameworks.withPlanner((cluster, relOptSchema, rootSchema) -> {
       cluster.getPlanner().setExecutor(new RexExecutorImpl(DataContexts.EMPTY));
       try {
@@ -128,9 +165,16 @@ public abstract class MaterializedViewTester {
               tableFactory.createTable(CalciteSchema.from(rootSchema),
                   sql, ImmutableList.of(defaultSchema.getName()));
           String name = pair.right;
+
           defaultSchema.add(name, table);
           relBuilder.scan(defaultSchema.getName(), name);
           final LogicalTableScan logicalScan = (LogicalTableScan) relBuilder.build();
+          if (logicalRel) {
+            mvs.add(
+                new RelOptMaterialization(logicalScan, mvRel, null,
+                    ImmutableList.of(defaultSchema.getName(), name)));
+            return new TestConfig(defaultSchema.getName(), queryRel, mvs);
+          }
           final EnumerableTableScan replacement =
               EnumerableTableScan.create(cluster, logicalScan.getTable());
           mvs.add(

@@ -24,7 +24,7 @@
   </Appenders>
 
   <Loggers>
-    <Root level="INFO">
+    <Root level="DEBUG">
       <AppenderRef ref="A1"/>
     </Root>
     <!-- [CALCITE-2519] Silence ERROR logs from CalciteException, SqlValidatorException during tests -->
@@ -37,7 +37,7 @@
     <logger name="org.apache.calcite.avatica" level="ERROR"/>
     <logger name="org.eclipse.jetty" level="ERROR"/>
     <logger name="org.apache.calcite.sql.parser" level="ERROR"/>
-    <logger name="org.apache.calcite.plan.RelOptPlanner" level="ERROR">
+    <logger name="org.apache.calcite.plan.RelOptPlanner" level="debug">
       <MarkerFilter marker="FULL_PLAN" onMatch="DENY" onMismatch="NEUTRAL"/>
     </logger>
   </Loggers>
