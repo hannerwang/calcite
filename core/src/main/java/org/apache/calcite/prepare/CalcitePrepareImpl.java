@@ -932,6 +932,7 @@ public class CalcitePrepareImpl implements CalcitePrepare {
               cluster, createConvertletTable());
       materializer.populate(materialization);
     } catch (Exception e) {
+      e.printStackTrace();
       throw new RuntimeException("While populating materialization "
           + materialization.materializedTable.path(), e);
     }

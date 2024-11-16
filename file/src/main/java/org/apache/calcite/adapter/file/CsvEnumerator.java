@@ -238,9 +238,6 @@ public class CsvEnumerator<E> implements Enumerator<E> {
     try {
     outer:
       for (;;) {
-        if (cancelFlag.get()) {
-          return false;
-        }
         final String[] strings = reader.readNext();
         if (strings == null) {
           if (reader instanceof CsvStreamReader) {
